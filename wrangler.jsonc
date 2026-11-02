@@ -1,0 +1,14 @@
+{
+  // ВАЖНО: name должен совпадать с именем вашего Worker в панели Cloudflare
+  "name": "can-archive",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "can-archive", "database_id": "4d54d211-00a4-41d9-b389-4b53f03185ac" }
+  ],
+  // Фото в R2. Если используете Backblaze B2, удалите этот блок целиком
+  "r2_buckets": [
+    { "binding": "PHOTOS", "bucket_name": "can-photos" }
+  ]
+}
