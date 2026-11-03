@@ -1,12 +1,73 @@
-// Единый Worker: API каталога (/api/cans) и фото (/img/...). Остальное отдаёт папка public.
+// Worker: каталог (/api/cans), регистрация и вход, публикация банок, фото из R2 (/img/...)
+const BRANDS = ['Monster', 'Red Bull', 'Coca-Cola', 'Pepsi', 'Schweppes', 'Fanta'];
+const TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+const MAX_FILE = 8 * 1024 * 1024;
+const enc = new TextEncoder();
+const hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+const unhex = h => new Uint8Array(h.match(/../g).map(x => parseInt(x, 16)));
+const json = (o, status = 200, headers = {}) => Response.json(o, { status, headers });
+
+async function pbkdf2(password, salt) {
+  const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+  return hex(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 100000 }, key, 256));
+}
+const sha = async s => hex(await crypto.subtle.digest('SHA-256', enc.encode(s)));
+
+function sid(request) {
+  const m = (request.headers.get('Cookie') || '').match(/(?:^|; )sid=([0-9a-f]+)/);
+  return m && m[1];
+}
+async function currentUser(request, env) {
+  const t = sid(request);
+  if (!t) return null;
+  return env.DB.prepare('SELECT u.id, u.nick FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires > ?')
+    .bind(await sha(t), Date.now()).first();
+}
+async function startSession(env, userId) {
+  const t = hex(crypto.getRandomValues(new Uint8Array(32)));
+  await env.DB.prepare('INSERT INTO sessions (token_hash, user_id, expires) VALUES (?, ?, ?)')
+    .bind(await sha(t), userId, Date.now() + 30 * 864e5).run();
+  return `sid=${t}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`;
+}
+
+async function register(request, env) {
+  const { nick, password } = await request.json().catch(() => ({}));
+  if (!/^[\p{L}\p{N}_-]{3,20}$/u.test(nick || '')) return json({ error: 'Никнейм: 3–20 символов (буквы, цифры, _ и -)' }, 400);
+  if (typeof password !== 'string' || password.length < 8 || password.length > 100) return json({ error: 'Пароль: минимум 8 символов' }, 400);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  try {
+    const r = await env.DB.prepare('INSERT INTO users (nick, nick_lc, salt, hash, created) VALUES (?, ?, ?, ?, ?)')
+      .bind(nick, nick.toLowerCase(), hex(salt), await pbkdf2(password, salt), Date.now()).run();
+    return json({ nick }, 200, { 'Set-Cookie': await startSession(env, r.meta.last_row_id) });
+  } catch {
+    return json({ error: 'Этот никнейм уже занят' }, 409);
+  }
+}
+
+async function login(request, env) {
+  const { nick, password } = await request.json().catch(() => ({}));
+  const u = await env.DB.prepare('SELECT * FROM users WHERE nick_lc = ?').bind(String(nick || '').toLowerCase()).first();
+  if (!u || (await pbkdf2(String(password || ''), unhex(u.salt))) !== u.hash) return json({ error: 'Неверный никнейм или пароль' }, 401);
+  return json({ nick: u.nick }, 200, { 'Set-Cookie': await startSession(env, u.id) });
+}
+
+async function logout(request, env) {
+  const t = sid(request);
+  if (t) await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(await sha(t)).run();
+  return json({ ok: true }, 200, { 'Set-Cookie': 'sid=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0' });
+}
 
 async function cans(q, env) {
   if (q.get('meta')) {
-    const brands = await env.DB.prepare('SELECT DISTINCT brand v FROM cans WHERE brand IS NOT NULL ORDER BY 1').all();
+    const c = await env.DB.prepare('SELECT brand, COUNT(*) n FROM cans GROUP BY brand').all();
     const countries = await env.DB.prepare('SELECT DISTINCT country v FROM cans WHERE country IS NOT NULL ORDER BY 1').all();
     const n = await env.DB.prepare('SELECT COUNT(*) n FROM cans').first();
-    return Response.json({ brands: brands.results.map(r => r.v), countries: countries.results.map(r => r.v), all: n.n },
-      { headers: { 'Cache-Control': 'public, max-age=60' } });
+    return json({
+      brands: BRANDS,
+      counts: Object.fromEntries(c.results.map(r => [r.brand, r.n])),
+      countries: countries.results.map(r => r.v),
+      all: n.n
+    });
   }
   const where = [], args = [];
   for (const k of ['brand', 'country', 'shape']) if (q.get(k)) { where.push(`${k} = ?`); args.push(q.get(k)); }
@@ -15,50 +76,75 @@ async function cans(q, env) {
   const w = where.length ? ' WHERE ' + where.join(' AND ') : '';
   const limit = Math.min(Number(q.get('limit')) || 48, 100), offset = Number(q.get('offset')) || 0;
   const total = await env.DB.prepare('SELECT COUNT(*) n FROM cans' + w).bind(...args).first();
-  const rows = await env.DB.prepare('SELECT * FROM cans' + w + ' ORDER BY id DESC LIMIT ? OFFSET ?').bind(...args, limit, offset).all();
-  return Response.json({ total: total.n, items: rows.results });
+  const rows = await env.DB.prepare('SELECT c.*, u.nick AS author FROM cans c LEFT JOIN users u ON u.id = c.user_id' + w + ' ORDER BY c.id DESC LIMIT ? OFFSET ?')
+    .bind(...args, limit, offset).all();
+  return json({ total: total.n, items: rows.results });
 }
 
-let b2 = null; // кэш авторизации Backblaze B2
-async function b2Auth(env) {
-  if (b2 && b2.exp > Date.now()) return b2;
-  const r = await fetch('https://api.backblazeb2.com/b2api/v3/b2_authorize_account', {
-    headers: { Authorization: 'Basic ' + btoa(`${env.B2_KEY_ID}:${env.B2_APP_KEY}`) }
-  });
-  if (!r.ok) throw new Error('B2 auth ' + r.status);
-  const j = await r.json();
-  b2 = { url: j.apiInfo?.storageApi?.downloadUrl ?? j.downloadUrl, token: j.authorizationToken, exp: Date.now() + 23 * 3600 * 1000 };
-  return b2;
-}
+async function publish(request, env) {
+  const user = await currentUser(request, env);
+  if (!user) return json({ error: 'Сначала войдите или зарегистрируйтесь' }, 401);
+  if (!env.PHOTOS) return json({ error: 'Хранилище фото не подключено' }, 501);
 
-async function image(request, env, ctx, key) {
-  if (!key || key.includes('..')) return new Response('Bad request', { status: 400 });
-  const cc = 'public, max-age=31536000, immutable';
+  const f = await request.formData().catch(() => null);
+  if (!f) return json({ error: 'Неверные данные' }, 400);
+  const brand = f.get('brand'), shape = f.get('shape');
+  const name = String(f.get('name') || '').trim(), country = String(f.get('country') || '').trim();
+  const description = String(f.get('description') || '').trim();
+  const volume = Number(f.get('volume')), year = Number(f.get('year'));
+  const photo = f.get('photo'), cover = f.get('cover');
 
-  if (env.PHOTOS) { // Cloudflare R2
-    const o = await env.PHOTOS.get(key);
-    if (!o) return new Response('Not found', { status: 404 });
-    return new Response(o.body, { headers: { 'Content-Type': o.httpMetadata?.contentType || 'image/jpeg', 'Cache-Control': cc } });
+  if (!BRANDS.includes(brand)) return json({ error: 'Выберите папку бренда' }, 400);
+  if (!name || name.length > 120) return json({ error: 'Укажите название (до 120 символов)' }, 400);
+  if (!country || country.length > 60) return json({ error: 'Укажите страну' }, 400);
+  if (!Number.isInteger(volume) || volume < 1 || volume > 5000) return json({ error: 'Объём: число от 1 до 5000 мл' }, 400);
+  if (!Number.isInteger(year) || year < 1900 || year > 2100) return json({ error: 'Укажите год' }, 400);
+  if (!['slim', 'wide'].includes(shape)) return json({ error: 'Выберите форму банки' }, 400);
+  if (description.length > 2000) return json({ error: 'Описание слишком длинное' }, 400);
+
+  const okFile = x => x && typeof x === 'object' && TYPES[x.type] && x.size > 0 && x.size <= MAX_FILE;
+  if (!okFile(photo)) return json({ error: 'Фото: JPG, PNG или WebP, до 8 МБ' }, 400);
+  if (cover && cover.size && !okFile(cover)) return json({ error: 'Обложка: JPG, PNG или WebP, до 8 МБ' }, 400);
+
+  const r = await env.DB.prepare('INSERT INTO cans (name, brand, country, volume, year, shape, description, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(name, brand, country, volume, year, shape, description, user.id).run();
+  const id = r.meta.last_row_id;
+  try {
+    const photoKey = `cans/${id}.${TYPES[photo.type]}`;
+    await env.PHOTOS.put(photoKey, photo.stream(), { httpMetadata: { contentType: photo.type } });
+    let coverKey = photoKey; // без отдельной обложки в каталоге показывается само фото
+    if (cover && cover.size) {
+      coverKey = `cans/${id}-cover.${TYPES[cover.type]}`;
+      await env.PHOTOS.put(coverKey, cover.stream(), { httpMetadata: { contentType: cover.type } });
+    }
+    await env.DB.prepare('UPDATE cans SET photo = ?, cover = ? WHERE id = ?').bind(photoKey, coverKey, id).run();
+  } catch {
+    await env.DB.prepare('DELETE FROM cans WHERE id = ?').bind(id).run();
+    return json({ error: 'Не удалось сохранить фото, попробуйте ещё раз' }, 500);
   }
+  return json({ id });
+}
 
-  // Backblaze B2 (приватный бакет)
-  const hit = await caches.default.match(request);
-  if (hit) return hit;
-  let a;
-  try { a = await b2Auth(env); } catch { return new Response('Storage error', { status: 502 }); }
-  const res = await fetch(`${a.url}/file/${env.B2_BUCKET}/${encodeURI(key)}`, { headers: { Authorization: a.token } });
-  if (res.status === 401) b2 = null;
-  if (!res.ok) return new Response('Not found', { status: res.status === 404 ? 404 : 502 });
-  const out = new Response(res.body, { headers: { 'Content-Type': res.headers.get('Content-Type') || 'image/jpeg', 'Cache-Control': cc } });
-  ctx.waitUntil(caches.default.put(request, out.clone()));
-  return out;
+async function image(env, key) {
+  if (!key || key.includes('..')) return new Response('Bad request', { status: 400 });
+  const o = await env.PHOTOS.get(key);
+  if (!o) return new Response('Not found', { status: 404 });
+  return new Response(o.body, { headers: { 'Content-Type': o.httpMetadata?.contentType || 'image/jpeg', 'Cache-Control': 'public, max-age=31536000, immutable' } });
 }
 
 export default {
-  async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    if (url.pathname === '/api/cans') return cans(url.searchParams, env);
-    if (url.pathname.startsWith('/img/')) return image(request, env, ctx, decodeURIComponent(url.pathname.slice(5)));
+  async fetch(request, env) {
+    const url = new URL(request.url), p = url.pathname, m = request.method;
+    if (m !== 'GET' && m !== 'HEAD') {
+      const o = request.headers.get('Origin');
+      if (o && o !== url.origin) return json({ error: 'Forbidden' }, 403);
+    }
+    if (p === '/api/cans') return m === 'POST' ? publish(request, env) : cans(url.searchParams, env);
+    if (p === '/api/me') { const u = await currentUser(request, env); return json({ nick: u ? u.nick : null }); }
+    if (p === '/api/register' && m === 'POST') return register(request, env);
+    if (p === '/api/login' && m === 'POST') return login(request, env);
+    if (p === '/api/logout' && m === 'POST') return logout(request, env);
+    if (p.startsWith('/img/')) return image(env, decodeURIComponent(p.slice(5)));
     return env.ASSETS.fetch(request);
   }
 };
