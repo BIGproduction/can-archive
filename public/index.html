@@ -12,19 +12,30 @@ body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 "Segoe UI",sy
 header{padding:20px 16px 8px;display:flex;flex-wrap:wrap;gap:4px 24px;align-items:baseline}
 h1{margin:0;font-size:26px;font-weight:700;letter-spacing:-.01em}
 .stat{color:var(--mut);font-size:14px}
-.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;padding:12px 16px}
-input,select,button{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--bd);border-radius:6px;padding:9px 10px;min-width:0}
+.auth{margin-left:auto;font-size:14px;color:var(--mut);display:flex;gap:8px;align-items:center}
+.pubbar{padding:8px 16px}
+input,select,textarea,button{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--bd);border-radius:6px;padding:9px 10px;min-width:0}
 button{cursor:pointer}
-button:focus-visible,input:focus-visible,select:focus-visible,.card:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.primary{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:600;padding:10px 20px}
+:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.filters,.folders{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;padding:8px 16px}
+.filters>*{width:100%}
+.folder{aspect-ratio:1;background:var(--card);border:1px solid var(--bd);border-top:6px solid var(--ac);border-radius:4px 14px 8px 8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;text-align:center;padding:8px;position:relative}
+.folder::before{content:"";position:absolute;left:-1px;top:-14px;width:38%;height:8px;background:var(--ac);border-radius:6px 6px 0 0}
+.folder b{font-size:clamp(14px,2vw,22px)}
+.folder span{color:var(--mut);font-size:13px}
+.folder:hover{border-color:var(--ac)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;padding:4px 16px 16px}
-.card{background:var(--card);border:1px solid var(--bd);border-radius:6px;overflow:hidden;cursor:pointer;display:flex;flex-direction:column}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:6px;overflow:hidden;cursor:pointer}
 .ph{aspect-ratio:2/3;background:var(--bd) center/cover no-repeat;position:relative}
 .mark{position:absolute;right:6px;top:6px;background:var(--ac);color:#fff;font-size:12px;padding:2px 7px;border-radius:10px}
 .card p{margin:0;padding:8px 10px;font-size:13px;line-height:1.35}
 .card b{display:block;font-size:14px}
+.bar{padding:4px 16px;display:flex;gap:12px;align-items:center}
 .more{display:block;margin:8px auto 32px}
-.empty{padding:32px 16px;color:var(--mut)}
+.empty{padding:24px 16px;color:var(--mut)}
 dialog{border:1px solid var(--bd);border-radius:10px;background:var(--card);color:var(--ink);padding:0;width:min(900px,94vw);max-height:92vh}
+dialog.sm{width:min(420px,94vw)}
 dialog::backdrop{background:rgba(0,0,0,.55)}
 .dlg{display:grid;grid-template-columns:1fr;gap:16px;padding:16px}
 @media(min-width:720px){.dlg{grid-template-columns:3fr 2fr}}
@@ -34,6 +45,11 @@ dt{color:var(--mut)}dd{margin:0}
 .row{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 .on{background:var(--ac);color:#fff;border-color:var(--ac)}
 .close{float:right;margin:8px 8px 0 0}
+form.stack{display:grid;gap:10px;padding:16px}
+form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
+.err{color:#d6336c;font-size:14px;min-height:20px}
+.tabs{display:flex;gap:8px}
+@media(max-width:720px){.filters,.folders{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 </head>
 <body>
@@ -41,7 +57,10 @@ dt{color:var(--mut)}dd{margin:0}
   <h1>Архив банок</h1>
   <span class="stat">Банок в архиве: <b id="all">0</b></span>
   <span class="stat">В вашей коллекции: <b id="nOwned">0</b> · В желаемом: <b id="nWish">0</b></span>
+  <span class="auth"><span id="who"></span><button id="authBtn">Войти / Регистрация</button></span>
 </header>
+
+<div class="pubbar"><button class="primary" id="pubBtn">Опубликовать банки</button></div>
 
 <form class="filters" id="f" onsubmit="return false">
   <input id="q" type="search" placeholder="Поиск по названию">
@@ -56,88 +75,115 @@ dt{color:var(--mut)}dd{margin:0}
   </select>
 </form>
 
-<div class="stat" style="padding:0 16px 8px">Найдено: <span id="found">0</span></div>
-<main class="grid" id="grid"></main>
-<button class="more" id="more" hidden>Показать ещё</button>
+<div class="folders" id="folders"></div>
 
-<dialog id="dlg"><button class="close" id="x">Закрыть</button><div id="dbody"></div></dialog>
+<section id="results" hidden>
+  <div class="bar"><button id="back">← Все папки</button><span class="stat">Найдено: <span id="found">0</span></span></div>
+  <div class="grid" id="grid"></div>
+  <button class="more" id="more" hidden>Показать ещё</button>
+</section>
+
+<dialog id="dlg"><button class="close" data-close>Закрыть</button><div id="dbody"></div></dialog>
+
+<dialog id="authDlg" class="sm">
+  <button class="close" data-close>Закрыть</button>
+  <form class="stack" id="authForm">
+    <div class="tabs">
+      <button type="button" id="tLogin" class="on">Вход</button>
+      <button type="button" id="tReg">Регистрация</button>
+    </div>
+    <label>Никнейм<input id="aNick" autocomplete="username" required minlength="3" maxlength="20"></label>
+    <label>Пароль<input id="aPass" type="password" autocomplete="current-password" required minlength="8"></label>
+    <div class="err" id="aErr"></div>
+    <button class="primary" id="aSubmit">Войти</button>
+  </form>
+</dialog>
+
+<dialog id="pubDlg" class="sm">
+  <button class="close" data-close>Закрыть</button>
+  <form class="stack" id="pubForm">
+    <h2 style="margin:0">Опубликовать банку</h2>
+    <label>Папка (бренд)<select name="brand" id="pBrand" required></select></label>
+    <label>Название<input name="name" required maxlength="120"></label>
+    <label>Страна<input name="country" list="countries" required maxlength="60"></label>
+    <label>Объём, мл<input name="volume" type="number" min="1" max="5000" required></label>
+    <label>Год<input name="year" type="number" min="1900" max="2100" required></label>
+    <label>Форма<select name="shape" required>
+      <option value="slim">Вытянутая</option><option value="wide">Пузатая</option></select></label>
+    <label>Описание<textarea name="description" rows="3" maxlength="2000"></textarea></label>
+    <label>Фото (коллаж)<input name="photo" type="file" accept="image/jpeg,image/png,image/webp" required></label>
+    <label>Обложка для каталога (необязательно)<input name="cover" type="file" accept="image/jpeg,image/png,image/webp"></label>
+    <div class="err" id="pErr"></div>
+    <button class="primary" id="pSubmit">Опубликовать</button>
+  </form>
+</dialog>
+<datalist id="countries"></datalist>
 
 <script>
 const $ = s => document.querySelector(s);
 const PAGE = 48;
 const SHAPE = {slim: 'Вытянутая', wide: 'Пузатая'};
-let st = {page: 0, total: 0, items: []};
+let me = null, meta = {brands: [], counts: {}, countries: [], all: 0}, st = {page: 0, total: 0, items: []};
+let mode = 'login', wantPublish = false;
 
-// Тестовые данные: работают, пока не подключён бэкенд (/api/cans)
-const DEMO = [
-  {id:1,name:'Soda water — blueberry/pomegranate',brand:'AHA',country:'United States',volume:355,year:2020,shape:'wide',description:'Тестовая банка. Здесь будет ваше описание.',cover:null,photo:null},
-  {id:2,name:'Soda water — citrus',brand:'AHA',country:'United States',volume:473,year:2020,shape:'slim',description:'Особенности банки, SKU и т. д.',cover:null,photo:null},
-  {id:3,name:'Soda water — mango',brand:'AHA',country:'United States',volume:355,year:2022,shape:'wide',description:'',cover:null,photo:null},
-  {id:4,name:'Ambasa melon flavored',brand:'Ambasa',country:'South Korea',volume:250,year:2019,shape:'wide',description:'',cover:null,photo:null}
-];
-
-// Желаемое и коллекция пока хранятся в браузере. Позже переедут в базу вместе со входом.
 const get = k => { try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch { return []; } };
 const put = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const img = k => k ? `style="background-image:url('/img/${encodeURI(k)}')"` : '';
+const counters = () => { $('#nOwned').textContent = get('owned').length; $('#nWish').textContent = get('wish').length; };
 
-function counters() { $('#nOwned').textContent = get('owned').length; $('#nWish').textContent = get('wish').length; }
-
-function demoQuery(p) {
-  const q = (p.get('q') || '').toLowerCase();
-  const items = DEMO.filter(c =>
-    (!q || c.name.toLowerCase().includes(q)) &&
-    (!p.get('brand') || c.brand === p.get('brand')) &&
-    (!p.get('country') || c.country === p.get('country')) &&
-    (!p.get('volume') || c.volume === +p.get('volume')) &&
-    (!p.get('year') || c.year === +p.get('year')) &&
-    (!p.get('shape') || c.shape === p.get('shape')));
-  return {total: items.length, items};
+async function api(path, opt = {}) {
+  const r = await fetch(path, {cache: 'no-store', ...opt});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'Ошибка ' + r.status);
+  return j;
 }
 
-async function api(path) {
-  const r = await fetch(path);
-  if (!r.ok) throw new Error(r.status);
-  return r.json();
-}
-
+// ---------- мета и папки ----------
 async function loadMeta() {
-  let m;
-  try { m = await api('/api/cans?meta=1'); }
-  catch { m = {all: DEMO.length, brands: [...new Set(DEMO.map(c => c.brand))], countries: [...new Set(DEMO.map(c => c.country))]}; }
-  $('#all').textContent = m.all;
-  for (const [id, list] of [['brand', m.brands], ['country', m.countries]])
-    $('#' + id).insertAdjacentHTML('beforeend', list.map(v => `<option>${esc(v)}</option>`).join(''));
+  try { meta = await api('/api/cans?meta=1'); } catch { return; }
+  $('#all').textContent = meta.all;
+  const keep = $('#brand').value;
+  $('#brand').innerHTML = '<option value="">Все бренды</option>' + meta.brands.map(b => `<option>${esc(b)}</option>`).join('');
+  $('#brand').value = keep;
+  const kc = $('#country').value;
+  $('#country').innerHTML = '<option value="">Все страны</option>' + meta.countries.map(v => `<option>${esc(v)}</option>`).join('');
+  $('#country').value = kc;
+  $('#countries').innerHTML = meta.countries.map(v => `<option value="${esc(v)}">`).join('');
+  $('#pBrand').innerHTML = meta.brands.map(b => `<option>${esc(b)}</option>`).join('');
+  $('#folders').innerHTML = meta.brands.map(b =>
+    `<div class="folder" tabindex="0" data-b="${esc(b)}"><b>${esc(b)}</b><span>банок: ${meta.counts[b] || 0}</span></div>`).join('');
 }
 
+// ---------- каталог ----------
 function params() {
   const p = new URLSearchParams();
   for (const k of ['q', 'brand', 'country', 'volume', 'year', 'shape']) { const v = $('#' + k).value.trim(); if (v) p.set(k, v); }
   return p;
 }
-
 async function load(more) {
-  if (!more) { st.page = 0; st.items = []; }
   const p = params();
+  const searching = p.toString() !== '';
+  $('#folders').hidden = searching; $('#results').hidden = !searching;
+  if (!searching) return;
+  if (!more) { st.page = 0; st.items = []; }
   p.set('limit', PAGE); p.set('offset', st.page * PAGE);
-  let d;
-  try { d = await api('/api/cans?' + p); } catch { d = demoQuery(p); }
-  st.items = st.items.concat(d.items); st.total = d.total; st.page++;
+  try {
+    const d = await api('/api/cans?' + p);
+    st.items = st.items.concat(d.items); st.total = d.total; st.page++;
+  } catch (e) { $('#grid').innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
   render();
 }
-
 function render() {
   const owned = get('owned'), wish = get('wish');
   $('#found').textContent = st.total;
   $('#grid').innerHTML = st.items.length ? st.items.map(c => `
     <div class="card" tabindex="0" data-id="${c.id}">
-      <div class="ph" ${img(c.cover)}>${owned.includes(c.id) ? '<span class="mark">есть</span>' : wish.includes(c.id) ? '<span class="mark">хочу</span>' : ''}</div>
+      <div class="ph" ${img(c.cover || c.photo)}>${owned.includes(c.id) ? '<span class="mark">есть</span>' : wish.includes(c.id) ? '<span class="mark">хочу</span>' : ''}</div>
       <p><b>${esc(c.brand)}</b>${esc(c.name)}<br>${esc(c.volume)} мл · ${esc(c.year)}</p>
     </div>`).join('') : '<div class="empty">Ничего не найдено. Измените фильтры.</div>';
   $('#more').hidden = st.items.length >= st.total;
 }
-
 function openCan(id) {
   const c = st.items.find(x => x.id === id); if (!c) return;
   const inList = k => get(k).includes(id);
@@ -150,6 +196,7 @@ function openCan(id) {
         <dt>Объём</dt><dd>${esc(c.volume)} мл</dd>
         <dt>Год</dt><dd>${esc(c.year)}</dd>
         <dt>Форма</dt><dd>${esc(SHAPE[c.shape] || '—')}</dd>
+        ${c.author ? `<dt>Опубликовал</dt><dd>${esc(c.author)}</dd>` : ''}
       </dl>
       <p>${esc(c.description)}</p>
       <div class="row">
@@ -166,13 +213,69 @@ function openCan(id) {
   if (!$('#dlg').open) $('#dlg').showModal();
 }
 
+// ---------- вход и регистрация ----------
+function updateAuth() {
+  $('#who').textContent = me ? 'Вы: ' + me : '';
+  $('#authBtn').textContent = me ? 'Выйти' : 'Войти / Регистрация';
+}
+function setMode(m) {
+  mode = m;
+  $('#tLogin').classList.toggle('on', m === 'login'); $('#tReg').classList.toggle('on', m === 'register');
+  $('#aSubmit').textContent = m === 'login' ? 'Войти' : 'Зарегистрироваться';
+  $('#aPass').autocomplete = m === 'login' ? 'current-password' : 'new-password';
+  $('#aErr').textContent = '';
+}
+function openAuth(m) { setMode(m); $('#authDlg').showModal(); }
+
+$('#authBtn').onclick = async () => {
+  if (me) { try { await api('/api/logout', {method: 'POST'}); } catch {} me = null; updateAuth(); }
+  else openAuth('login');
+};
+$('#tLogin').onclick = () => setMode('login');
+$('#tReg').onclick = () => setMode('register');
+$('#authForm').onsubmit = async e => {
+  e.preventDefault();
+  $('#aErr').textContent = '';
+  try {
+    const r = await api('/api/' + mode, {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({nick: $('#aNick').value.trim(), password: $('#aPass').value})});
+    me = r.nick; updateAuth(); $('#authForm').reset(); $('#authDlg').close();
+    if (wantPublish) { wantPublish = false; openPub(); }
+  } catch (err) { $('#aErr').textContent = err.message; }
+};
+
+// ---------- публикация ----------
+function openPub() { $('#pErr').textContent = ''; $('#pubDlg').showModal(); }
+$('#pubBtn').onclick = () => { if (me) openPub(); else { wantPublish = true; openAuth('register'); } };
+$('#pubForm').onsubmit = async e => {
+  e.preventDefault();
+  const btn = $('#pSubmit'); btn.disabled = true; $('#pErr').textContent = 'Загрузка…';
+  const fd = new FormData($('#pubForm')), brand = fd.get('brand');
+  try {
+    await api('/api/cans', {method: 'POST', body: fd});
+    $('#pubForm').reset(); $('#pubDlg').close();
+    await loadMeta(); $('#brand').value = brand; load(false);
+  } catch (err) { $('#pErr').textContent = err.message; }
+  btn.disabled = false;
+};
+
+// ---------- события ----------
+document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
+$('#authDlg').addEventListener('close', () => { wantPublish = false; });
+const folderOpen = e => { const f = e.target.closest('.folder'); if (f) { $('#brand').value = f.dataset.b; load(false); } };
+$('#folders').addEventListener('click', folderOpen);
+$('#folders').addEventListener('keydown', e => { if (e.key === 'Enter') folderOpen(e); });
+$('#back').onclick = () => { $('#f').reset(); load(false); };
 $('#grid').addEventListener('click', e => { const c = e.target.closest('.card'); if (c) openCan(+c.dataset.id); });
 $('#grid').addEventListener('keydown', e => { if (e.key === 'Enter') { const c = e.target.closest('.card'); if (c) openCan(+c.dataset.id); } });
-$('#x').onclick = () => $('#dlg').close();
 $('#more').onclick = () => load(true);
 let t; $('#f').addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => load(false), 250); });
 
-counters(); loadMeta(); load(false);
+(async () => {
+  counters();
+  try { me = (await api('/api/me')).nick; } catch {}
+  updateAuth(); await loadMeta(); load(false);
+})();
 </script>
 </body>
 </html>
