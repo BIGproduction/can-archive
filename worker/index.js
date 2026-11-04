@@ -62,16 +62,24 @@ async function cans(q, env) {
     const c = await env.DB.prepare('SELECT brand, COUNT(*) n FROM cans GROUP BY brand').all();
     const countries = await env.DB.prepare('SELECT DISTINCT country v FROM cans WHERE country IS NOT NULL ORDER BY 1').all();
     const n = await env.DB.prepare('SELECT COUNT(*) n FROM cans').first();
+    const vols = await env.DB.prepare('SELECT DISTINCT volume v FROM cans WHERE volume IS NOT NULL ORDER BY 1').all();
+    const yrs = await env.DB.prepare('SELECT DISTINCT year v FROM cans WHERE year IS NOT NULL ORDER BY 1 DESC').all();
+    const cv = await env.DB.prepare('SELECT brand, k FROM (SELECT brand, COALESCE(cover, photo) AS k, ROW_NUMBER() OVER (PARTITION BY brand ORDER BY id DESC) rn FROM cans WHERE COALESCE(cover, photo) IS NOT NULL) WHERE rn <= 9').all();
+    const covers = {};
+    for (const r of cv.results) (covers[r.brand] ||= []).push(r.k);
     return json({
       brands: BRANDS,
       counts: Object.fromEntries(c.results.map(r => [r.brand, r.n])),
       countries: countries.results.map(r => r.v),
+      volumes: vols.results.map(r => r.v),
+      years: yrs.results.map(r => r.v),
+      covers,
       all: n.n
     });
   }
   const where = [], args = [];
   for (const k of ['brand', 'country', 'shape']) if (q.get(k)) { where.push(`${k} = ?`); args.push(q.get(k)); }
-  for (const k of ['volume', 'year']) if (q.get(k)) { where.push(`${k} = ?`); args.push(Number(q.get(k))); }
+  for (const k of ['volume', 'year', 'series_id']) if (q.get(k)) { where.push(`${k} = ?`); args.push(Number(q.get(k))); }
   if (q.get('q')) { where.push('(name LIKE ? OR description LIKE ?)'); args.push(`%${q.get('q')}%`, `%${q.get('q')}%`); }
   const w = where.length ? ' WHERE ' + where.join(' AND ') : '';
   const limit = Math.min(Number(q.get('limit')) || 48, 100), offset = Number(q.get('offset')) || 0;
@@ -93,8 +101,11 @@ async function publish(request, env) {
   const description = String(f.get('description') || '').trim();
   const volume = Number(f.get('volume')), year = Number(f.get('year'));
   const photo = f.get('photo'), cover = f.get('cover');
+  const seriesId = Number(f.get('series_id'));
 
   if (!BRANDS.includes(brand)) return json({ error: 'Выберите папку бренда' }, 400);
+  const ser = await env.DB.prepare('SELECT id FROM series WHERE id = ? AND brand = ?').bind(seriesId, brand).first();
+  if (!ser) return json({ error: 'Выберите папку вкуса/серии' }, 400);
   if (!name || name.length > 120) return json({ error: 'Укажите название (до 120 символов)' }, 400);
   if (!country || country.length > 60) return json({ error: 'Укажите страну' }, 400);
   if (!Number.isInteger(volume) || volume < 1 || volume > 5000) return json({ error: 'Объём: число от 1 до 5000 мл' }, 400);
@@ -106,8 +117,8 @@ async function publish(request, env) {
   if (!okFile(photo)) return json({ error: 'Фото: JPG, PNG или WebP, до 8 МБ' }, 400);
   if (cover && cover.size && !okFile(cover)) return json({ error: 'Обложка: JPG, PNG или WebP, до 8 МБ' }, 400);
 
-  const r = await env.DB.prepare('INSERT INTO cans (name, brand, country, volume, year, shape, description, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(name, brand, country, volume, year, shape, description, user.id).run();
+  const r = await env.DB.prepare('INSERT INTO cans (name, brand, country, volume, year, shape, description, user_id, series_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(name, brand, country, volume, year, shape, description, user.id, seriesId).run();
   const id = r.meta.last_row_id;
   try {
     const photoKey = `cans/${id}.${TYPES[photo.type]}`;
@@ -125,6 +136,35 @@ async function publish(request, env) {
   return json({ id });
 }
 
+async function seriesList(q, env) {
+  if (q.get('id')) {
+    const s = await env.DB.prepare('SELECT id, brand, name FROM series WHERE id = ?').bind(Number(q.get('id'))).first();
+    return s ? json(s) : json({ error: 'Папка не найдена' }, 404);
+  }
+  const brand = q.get('brand') || '';
+  const rows = await env.DB.prepare('SELECT id, name FROM series WHERE brand = ? ORDER BY name').bind(brand).all();
+  const cv = await env.DB.prepare('SELECT series_id, k FROM (SELECT series_id, COALESCE(cover, photo) AS k, ROW_NUMBER() OVER (PARTITION BY series_id ORDER BY id DESC) rn FROM cans WHERE brand = ? AND series_id IS NOT NULL AND COALESCE(cover, photo) IS NOT NULL) WHERE rn <= 4').bind(brand).all();
+  const by = {};
+  for (const r of cv.results) (by[r.series_id] ||= []).push(r.k);
+  return json({ items: rows.results.map(r => ({ ...r, covers: by[r.id] || [] })) });
+}
+
+async function seriesCreate(request, env) {
+  const user = await currentUser(request, env);
+  if (!user) return json({ error: 'Сначала войдите или зарегистрируйтесь' }, 401);
+  const { brand, name } = await request.json().catch(() => ({}));
+  const n = String(name || '').trim();
+  if (!BRANDS.includes(brand)) return json({ error: 'Выберите бренд' }, 400);
+  if (!n || n.length > 60) return json({ error: 'Название папки: от 1 до 60 символов' }, 400);
+  try {
+    const r = await env.DB.prepare('INSERT INTO series (brand, name, name_lc, user_id, created) VALUES (?, ?, ?, ?, ?)')
+      .bind(brand, n, n.toLowerCase(), user.id, Date.now()).run();
+    return json({ id: r.meta.last_row_id });
+  } catch {
+    return json({ error: 'Такая папка уже есть в этом бренде' }, 409);
+  }
+}
+
 async function image(env, key) {
   if (!key || key.includes('..')) return new Response('Bad request', { status: 400 });
   const o = await env.PHOTOS.get(key);
@@ -140,6 +180,7 @@ export default {
       if (o && o !== url.origin) return json({ error: 'Forbidden' }, 403);
     }
     if (p === '/api/cans') return m === 'POST' ? publish(request, env) : cans(url.searchParams, env);
+    if (p === '/api/series') return m === 'POST' ? seriesCreate(request, env) : seriesList(url.searchParams, env);
     if (p === '/api/me') { const u = await currentUser(request, env); return json({ nick: u ? u.nick : null }); }
     if (p === '/api/register' && m === 'POST') return register(request, env);
     if (p === '/api/login' && m === 'POST') return login(request, env);
