@@ -32,22 +32,23 @@ async function startSession(env, userId) {
 
 async function register(request, env) {
   const { nick, password } = await request.json().catch(() => ({}));
-  if (!/^[\p{L}\p{N}_-]{3,20}$/u.test(nick || '')) return json({ error: 'Никнейм: 3–20 символов (буквы, цифры, _ и -)' }, 400);
-  if (typeof password !== 'string' || password.length < 8 || password.length > 100) return json({ error: 'Пароль: минимум 8 символов' }, 400);
+  if (!/^[\p{L}\p{N}_-]{3,20}$/u.test(nick || '')) return json({ error: 'Nickname: 3–20 characters (letters, digits, _ and -)' }, 400);
+  if (typeof password !== 'string' || password.length < 8 || password.length > 100) return json({ error: 'Password: at least 8 characters' }, 400);
   const salt = crypto.getRandomValues(new Uint8Array(16));
   try {
     const r = await env.DB.prepare('INSERT INTO users (nick, nick_lc, salt, hash, created) VALUES (?, ?, ?, ?, ?)')
       .bind(nick, nick.toLowerCase(), hex(salt), await pbkdf2(password, salt), Date.now()).run();
     return json({ nick }, 200, { 'Set-Cookie': await startSession(env, r.meta.last_row_id) });
-  } catch {
-    return json({ error: 'Этот никнейм уже занят' }, 409);
+  } catch (e) {
+    if (/UNIQUE/i.test(String(e && e.message || e))) return json({ error: 'This nickname is already taken' }, 409);
+    throw e;
   }
 }
 
 async function login(request, env) {
   const { nick, password } = await request.json().catch(() => ({}));
   const u = await env.DB.prepare('SELECT * FROM users WHERE nick_lc = ?').bind(String(nick || '').toLowerCase()).first();
-  if (!u || (await pbkdf2(String(password || ''), unhex(u.salt))) !== u.hash) return json({ error: 'Неверный никнейм или пароль' }, 401);
+  if (!u || (await pbkdf2(String(password || ''), unhex(u.salt))) !== u.hash) return json({ error: 'Wrong nickname or password' }, 401);
   return json({ nick: u.nick }, 200, { 'Set-Cookie': await startSession(env, u.id) });
 }
 
@@ -91,11 +92,11 @@ async function cans(q, env) {
 
 async function publish(request, env) {
   const user = await currentUser(request, env);
-  if (!user) return json({ error: 'Сначала войдите или зарегистрируйтесь' }, 401);
-  if (!env.PHOTOS) return json({ error: 'Хранилище фото не подключено' }, 501);
+  if (!user) return json({ error: 'Please log in or sign up first' }, 401);
+  if (!env.PHOTOS) return json({ error: 'Photo storage is not connected' }, 501);
 
   const f = await request.formData().catch(() => null);
-  if (!f) return json({ error: 'Неверные данные' }, 400);
+  if (!f) return json({ error: 'Invalid data' }, 400);
   const brand = f.get('brand'), shape = f.get('shape');
   const name = String(f.get('name') || '').trim(), country = String(f.get('country') || '').trim();
   const description = String(f.get('description') || '').trim();
@@ -103,19 +104,19 @@ async function publish(request, env) {
   const photo = f.get('photo'), cover = f.get('cover');
   const seriesId = Number(f.get('series_id'));
 
-  if (!BRANDS.includes(brand)) return json({ error: 'Выберите папку бренда' }, 400);
+  if (!BRANDS.includes(brand)) return json({ error: 'Select a brand' }, 400);
   const ser = await env.DB.prepare('SELECT id FROM series WHERE id = ? AND brand = ?').bind(seriesId, brand).first();
-  if (!ser) return json({ error: 'Выберите папку вкуса/серии' }, 400);
-  if (!name || name.length > 120) return json({ error: 'Укажите название (до 120 символов)' }, 400);
-  if (!country || country.length > 60) return json({ error: 'Укажите страну' }, 400);
-  if (!Number.isInteger(volume) || volume < 1 || volume > 5000) return json({ error: 'Объём: число от 1 до 5000 мл' }, 400);
-  if (!Number.isInteger(year) || year < 1900 || year > 2100) return json({ error: 'Укажите год' }, 400);
-  if (!['slim', 'wide'].includes(shape)) return json({ error: 'Выберите форму банки' }, 400);
-  if (description.length > 2000) return json({ error: 'Описание слишком длинное' }, 400);
+  if (!ser) return json({ error: 'Select a flavor/series folder' }, 400);
+  if (!name || name.length > 120) return json({ error: 'Enter a name (up to 120 characters)' }, 400);
+  if (!country || country.length > 60) return json({ error: 'Enter a country' }, 400);
+  if (!Number.isInteger(volume) || volume < 1 || volume > 5000) return json({ error: 'Volume: a number from 1 to 5000 ml' }, 400);
+  if (!Number.isInteger(year) || year < 1900 || year > 2100) return json({ error: 'Enter a year' }, 400);
+  if (!['slim', 'wide'].includes(shape)) return json({ error: 'Select a can shape' }, 400);
+  if (description.length > 2000) return json({ error: 'Description is too long' }, 400);
 
   const okFile = x => x && typeof x === 'object' && TYPES[x.type] && x.size > 0 && x.size <= MAX_FILE;
-  if (!okFile(photo)) return json({ error: 'Фото: JPG, PNG или WebP, до 8 МБ' }, 400);
-  if (cover && cover.size && !okFile(cover)) return json({ error: 'Обложка: JPG, PNG или WebP, до 8 МБ' }, 400);
+  if (!okFile(photo)) return json({ error: 'Photo: JPG, PNG or WebP, up to 8 MB' }, 400);
+  if (cover && cover.size && !okFile(cover)) return json({ error: 'Cover: JPG, PNG or WebP, up to 8 MB' }, 400);
 
   const r = await env.DB.prepare('INSERT INTO cans (name, brand, country, volume, year, shape, description, user_id, series_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .bind(name, brand, country, volume, year, shape, description, user.id, seriesId).run();
@@ -131,7 +132,7 @@ async function publish(request, env) {
     await env.DB.prepare('UPDATE cans SET photo = ?, cover = ? WHERE id = ?').bind(photoKey, coverKey, id).run();
   } catch {
     await env.DB.prepare('DELETE FROM cans WHERE id = ?').bind(id).run();
-    return json({ error: 'Не удалось сохранить фото, попробуйте ещё раз' }, 500);
+    return json({ error: 'Could not save the photo, please try again' }, 500);
   }
   return json({ id });
 }
@@ -139,7 +140,7 @@ async function publish(request, env) {
 async function seriesList(q, env) {
   if (q.get('id')) {
     const s = await env.DB.prepare('SELECT id, brand, name FROM series WHERE id = ?').bind(Number(q.get('id'))).first();
-    return s ? json(s) : json({ error: 'Папка не найдена' }, 404);
+    return s ? json(s) : json({ error: 'Folder not found' }, 404);
   }
   const brand = q.get('brand') || '';
   const rows = await env.DB.prepare('SELECT id, name FROM series WHERE brand = ? ORDER BY name').bind(brand).all();
@@ -151,17 +152,18 @@ async function seriesList(q, env) {
 
 async function seriesCreate(request, env) {
   const user = await currentUser(request, env);
-  if (!user) return json({ error: 'Сначала войдите или зарегистрируйтесь' }, 401);
+  if (!user) return json({ error: 'Please log in or sign up first' }, 401);
   const { brand, name } = await request.json().catch(() => ({}));
   const n = String(name || '').trim();
-  if (!BRANDS.includes(brand)) return json({ error: 'Выберите бренд' }, 400);
-  if (!n || n.length > 60) return json({ error: 'Название папки: от 1 до 60 символов' }, 400);
+  if (!BRANDS.includes(brand)) return json({ error: 'Select a brand' }, 400);
+  if (!n || n.length > 60) return json({ error: 'Folder name: 1 to 60 characters' }, 400);
   try {
     const r = await env.DB.prepare('INSERT INTO series (brand, name, name_lc, user_id, created) VALUES (?, ?, ?, ?, ?)')
       .bind(brand, n, n.toLowerCase(), user.id, Date.now()).run();
     return json({ id: r.meta.last_row_id });
-  } catch {
-    return json({ error: 'Такая папка уже есть в этом бренде' }, 409);
+  } catch (e) {
+    if (/UNIQUE/i.test(String(e && e.message || e))) return json({ error: 'This folder already exists in this brand' }, 409);
+    throw e;
   }
 }
 
@@ -172,8 +174,7 @@ async function image(env, key) {
   return new Response(o.body, { headers: { 'Content-Type': o.httpMetadata?.contentType || 'image/jpeg', 'Cache-Control': 'public, max-age=31536000, immutable' } });
 }
 
-export default {
-  async fetch(request, env) {
+async function handle(request, env) {
     const url = new URL(request.url), p = url.pathname, m = request.method;
     if (m !== 'GET' && m !== 'HEAD') {
       const o = request.headers.get('Origin');
@@ -187,5 +188,11 @@ export default {
     if (p === '/api/logout' && m === 'POST') return logout(request, env);
     if (p.startsWith('/img/')) return image(env, decodeURIComponent(p.slice(5)));
     return env.ASSETS.fetch(request);
+}
+
+export default {
+  async fetch(request, env) {
+    try { return await handle(request, env); }
+    catch (e) { return json({ error: 'Server error: ' + (e && e.message || e) }, 500); }
   }
 };
