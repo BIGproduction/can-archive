@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Архив банок</title>
+<title>BIG_archive</title>
 <style>
 :root{--bg:#e8ecef;--card:#f7f9fa;--ink:#0f1b24;--mut:#5d6b76;--ac:#2457ff;--bd:#cfd6db}
 @media(prefers-color-scheme:dark){:root{--bg:#10171d;--card:#18222b;--ink:#e9eef2;--mut:#8b99a4;--ac:#6f93ff;--bd:#2b3945}}
@@ -67,101 +67,105 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 .hint{color:var(--mut);font-size:13px}
 .tabs{display:flex;gap:8px}
 [hidden]{display:none!important}
+#sFolders{grid-template-columns:repeat(9,minmax(0,1fr))}
+#sFolders .cap{font-size:13px}
+@media(max-width:1100px){#sFolders{grid-template-columns:repeat(6,minmax(0,1fr))}}
+@media(max-width:720px){#sFolders{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:720px){.six{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 </head>
 <body>
 <header>
-  <h1>Архив банок</h1>
-  <span class="stat">Банок в архиве: <b id="all">0</b></span>
-  <span class="stat">В вашей коллекции: <b id="nOwned">0</b> · В желаемом: <b id="nWish">0</b></span>
-  <span class="auth"><span id="who"></span><button id="authBtn">Войти / Регистрация</button></span>
+  <h1>BIG_archive</h1>
+  <span class="stat">Cans in archive: <b id="all">0</b></span>
+  <span class="stat">In your collection: <b id="nOwned">0</b> · Wishlist: <b id="nWish">0</b></span>
+  <span class="auth"><span id="who"></span><button id="authBtn">Log in / Sign up</button></span>
 </header>
 
 <div class="pubbar">
-  <button class="sq" id="serBtn" title="Создать папку вкуса/серии" aria-label="Создать папку вкуса или серии">
+  <button class="sq" id="serBtn" title="Create flavor/series folder" aria-label="Create a flavor or series folder">
     <svg viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18z"/></svg>
   </button>
-  <button class="primary" id="pubBtn">Опубликовать банки</button>
+  <button class="primary" id="pubBtn">Publish cans</button>
 </div>
 
 <section id="home">
   <form class="six filters" id="f" onsubmit="return false">
-    <input id="q" type="search" placeholder="Поиск по названию">
-    <select id="brand"><option value="">Все бренды</option></select>
-    <select id="country"><option value="">Все страны</option></select>
-    <select id="volume"><option value="">Любой объём</option></select>
-    <select id="year"><option value="">Любой год</option></select>
+    <input id="q" type="search" placeholder="Search by name">
+    <select id="brand"><option value="">All brands</option></select>
+    <select id="country"><option value="">All countries</option></select>
+    <select id="volume"><option value="">Any volume</option></select>
+    <select id="year"><option value="">Any year</option></select>
     <select id="shape">
-      <option value="">Любая форма</option>
-      <option value="slim">Вытянутая</option>
-      <option value="wide">Пузатая</option>
+      <option value="">Any shape</option>
+      <option value="slim">Slim</option>
+      <option value="wide">Wide</option>
     </select>
   </form>
   <div class="six" id="folders"></div>
   <div id="results" hidden>
-    <div class="bar"><a class="link" id="back">← Все папки</a><span class="stat">Найдено: <span id="found">0</span></span></div>
+    <div class="bar"><a class="link" id="back">← All folders</a><span class="stat">Found: <span id="found">0</span></span></div>
     <div class="six grid" id="grid"></div>
-    <button class="more" id="more" hidden>Показать ещё</button>
+    <button class="more" id="more" hidden>Show more</button>
   </div>
 </section>
 
 <section id="brandPage" hidden>
-  <div class="bar"><a class="link" href="#">← Все бренды</a><h2 id="bTitle"></h2></div>
+  <div class="bar"><a class="link" href="#">← All brands</a><h2 id="bTitle"></h2></div>
   <div class="six" id="sFolders"></div>
 </section>
 
 <section id="seriesPage" hidden>
-  <div class="bar"><a class="link" id="sBack" href="#">← Назад</a><h2 id="sTitle"></h2></div>
+  <div class="bar"><a class="link" id="sBack" href="#">← Back</a><h2 id="sTitle"></h2></div>
   <div class="six grid" id="sgrid"></div>
-  <button class="more" id="smore" hidden>Показать ещё</button>
+  <button class="more" id="smore" hidden>Show more</button>
 </section>
 
-<dialog id="dlg"><button class="close" data-close>Закрыть</button><div id="dbody"></div></dialog>
+<dialog id="dlg"><button class="close" data-close>Close</button><div id="dbody"></div></dialog>
 
 <dialog id="authDlg" class="sm">
-  <button class="close" data-close>Закрыть</button>
+  <button class="close" data-close>Close</button>
   <form class="stack" id="authForm">
     <div class="tabs">
-      <button type="button" id="tLogin" class="on">Вход</button>
-      <button type="button" id="tReg">Регистрация</button>
+      <button type="button" id="tLogin" class="on">Log in</button>
+      <button type="button" id="tReg">Sign up</button>
     </div>
-    <label>Никнейм<input id="aNick" autocomplete="username" required minlength="3" maxlength="20"></label>
-    <label>Пароль<input id="aPass" type="password" autocomplete="current-password" required minlength="8"></label>
+    <label>Nickname<input id="aNick" autocomplete="username" required minlength="3" maxlength="20"></label>
+    <label>Password<input id="aPass" type="password" autocomplete="current-password" required minlength="8"></label>
     <div class="err" id="aErr"></div>
-    <button class="primary" id="aSubmit">Войти</button>
+    <button class="primary" id="aSubmit">Log in</button>
   </form>
 </dialog>
 
 <dialog id="serDlg" class="sm">
-  <button class="close" data-close>Закрыть</button>
+  <button class="close" data-close>Close</button>
   <form class="stack" id="serForm">
-    <h2 style="margin:0">Новая папка вкуса/серии</h2>
-    <label>Бренд<select id="sBrand" required></select></label>
-    <label>Название папки<input id="sName" required maxlength="60"></label>
+    <h2 style="margin:0">New flavor/series folder</h2>
+    <label>Brand<select id="sBrand" required></select></label>
+    <label>Folder name<input id="sName" required maxlength="60"></label>
     <div class="err" id="sErr"></div>
-    <button class="primary">Создать папку</button>
+    <button class="primary">Create folder</button>
   </form>
 </dialog>
 
 <dialog id="pubDlg" class="sm">
-  <button class="close" data-close>Закрыть</button>
+  <button class="close" data-close>Close</button>
   <form class="stack" id="pubForm">
-    <h2 style="margin:0">Опубликовать банку</h2>
-    <label>Бренд<select name="brand" id="pBrand" required></select></label>
-    <label id="pSerWrap" hidden>Вкус / серия<select name="series_id" id="pSeries" required></select>
+    <h2 style="margin:0">Publish a can</h2>
+    <label>Brand<select name="brand" id="pBrand" required></select></label>
+    <label id="pSerWrap" hidden>Flavor / series<select name="series_id" id="pSeries" required></select>
       <span class="hint" id="pHint"></span></label>
-    <label>Название<input name="name" required maxlength="120"></label>
-    <label>Страна<input name="country" list="countries" required maxlength="60"></label>
-    <label>Объём, мл<input name="volume" type="number" min="1" max="5000" required></label>
-    <label>Год<input name="year" type="number" min="1900" max="2100" required></label>
-    <label>Форма<select name="shape" required>
-      <option value="slim">Вытянутая</option><option value="wide">Пузатая</option></select></label>
-    <label>Описание<textarea name="description" rows="3" maxlength="2000"></textarea></label>
-    <label>Фото (коллаж)<input name="photo" type="file" accept="image/jpeg,image/png,image/webp" required></label>
-    <label>Обложка для каталога (необязательно)<input name="cover" type="file" accept="image/jpeg,image/png,image/webp"></label>
+    <label>Name<input name="name" required maxlength="120"></label>
+    <label>Country<input name="country" list="countries" required maxlength="60"></label>
+    <label>Volume, ml<input name="volume" type="number" min="1" max="5000" required></label>
+    <label>Year<input name="year" type="number" min="1900" max="2100" required></label>
+    <label>Shape<select name="shape" required>
+      <option value="slim">Slim</option><option value="wide">Wide</option></select></label>
+    <label>Description<textarea name="description" rows="3" maxlength="2000"></textarea></label>
+    <label>Photo (collage)<input name="photo" type="file" accept="image/jpeg,image/png,image/webp" required></label>
+    <label>Catalog cover (optional)<input name="cover" type="file" accept="image/jpeg,image/png,image/webp"></label>
     <div class="err" id="pErr"></div>
-    <button class="primary" id="pSubmit">Опубликовать</button>
+    <button class="primary" id="pSubmit">Publish</button>
   </form>
 </dialog>
 <datalist id="countries"></datalist>
@@ -169,7 +173,7 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 <script>
 const $ = s => document.querySelector(s);
 const PAGE = 48;
-const SHAPE = {slim: 'Вытянутая', wide: 'Пузатая'};
+const SHAPE = {slim: 'Slim', wide: 'Wide'};
 let me = null, meta = {brands: [], counts: {}, countries: [], volumes: [], years: [], all: 0};
 let st = {page: 0, total: 0, items: []}, cur = null, mode = 'login', afterAuth = null;
 
@@ -182,12 +186,14 @@ const bg = k => `style="background-image:url('/img/${encodeURI(k)}')"`;
 const FOLDER = '<svg viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18z"/></svg>';
 const brandTile = b => `<div class="tile" tabindex="0" data-b="${esc(b)}"><div class="bbox"><div class="mos">${(meta.covers?.[b] || []).map(k => `<i ${bg(k)}></i>`).join('')}</div><span class="badge">${FOLDER}</span><span class="ribbon">${esc(b)}</span></div><div class="cap">${esc(b)}</div></div>`;
 const seriesTile = s => `<div class="tile" tabindex="0" data-s="${s.id}"><div class="fold"><div class="back"></div><div class="paper">${(s.covers || []).map(k => `<i ${bg(k)}></i>`).join('')}</div><div class="front"></div></div><div class="cap">${esc(s.name)}</div></div>`;
+const coll = new Intl.Collator(['ru', 'en'], {numeric: true, sensitivity: 'base'});
+const byName = a => [...a].sort((x, y) => coll.compare(x.name, y.name));
 const counters = () => { $('#nOwned').textContent = get('owned').length; $('#nWish').textContent = get('wish').length; };
 
 async function api(path, opt = {}) {
   const r = await fetch(path, {cache: 'no-store', ...opt});
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || 'Ошибка ' + r.status);
+  if (!r.ok) throw new Error(j.error || 'Error ' + r.status);
   return j;
 }
 
@@ -196,13 +202,13 @@ function fill(sel, html) { const v = $(sel).value; $(sel).innerHTML = html; $(se
 async function loadMeta() {
   try { meta = await api('/api/cans?meta=1'); } catch { return; }
   $('#all').textContent = meta.all;
-  fill('#brand', opts(meta.brands, 'Все бренды'));
-  fill('#country', opts(meta.countries, 'Все страны'));
-  fill('#volume', opts(meta.volumes, 'Любой объём', v => v + ' мл'));
-  fill('#year', opts(meta.years, 'Любой год'));
+  fill('#brand', opts(meta.brands, 'All brands'));
+  fill('#country', opts(meta.countries, 'All countries'));
+  fill('#volume', opts(meta.volumes, 'Any volume', v => v + ' ml'));
+  fill('#year', opts(meta.years, 'Any year'));
   $('#countries').innerHTML = meta.countries.map(v => `<option value="${esc(v)}">`).join('');
-  $('#pBrand').innerHTML = opts(meta.brands, 'Выберите бренд');
-  $('#sBrand').innerHTML = opts(meta.brands, 'Выберите бренд');
+  $('#pBrand').innerHTML = opts(meta.brands, 'Select a brand');
+  $('#sBrand').innerHTML = opts(meta.brands, 'Select a brand');
   $('#folders').innerHTML = meta.brands.map(brandTile).join('');
 }
 
@@ -222,9 +228,9 @@ function render() {
   if (cur.found) $(cur.found).textContent = st.total;
   $(cur.grid).innerHTML = st.items.length ? st.items.map(c => `
     <div class="card" tabindex="0" data-id="${c.id}">
-      <div class="ph" ${img(c.cover || c.photo)}>${owned.includes(c.id) ? '<span class="mark">есть</span>' : wish.includes(c.id) ? '<span class="mark">хочу</span>' : ''}</div>
-      <p><b>${esc(c.brand)}</b>${esc(c.name)}<br>${esc(c.volume)} мл · ${esc(c.year)}</p>
-    </div>`).join('') : '<div class="empty">Здесь пока нет банок.</div>';
+      <div class="ph" ${img(c.cover || c.photo)}>${owned.includes(c.id) ? '<span class="mark">owned</span>' : wish.includes(c.id) ? '<span class="mark">wish</span>' : ''}</div>
+      <p><b>${esc(c.brand)}</b>${esc(c.name)}<br>${esc(c.volume)} ml · ${esc(c.year)}</p>
+    </div>`).join('') : '<div class="empty">No cans here yet.</div>';
   $(cur.more).hidden = st.items.length >= st.total;
 }
 function openCan(id) {
@@ -235,16 +241,16 @@ function openCan(id) {
     <div>
       <h2 style="margin:0">${esc(c.brand)}</h2><div>${esc(c.name)}</div>
       <dl>
-        <dt>Страна</dt><dd>${esc(c.country)}</dd>
-        <dt>Объём</dt><dd>${esc(c.volume)} мл</dd>
-        <dt>Год</dt><dd>${esc(c.year)}</dd>
-        <dt>Форма</dt><dd>${esc(SHAPE[c.shape] || '—')}</dd>
-        ${c.author ? `<dt>Опубликовал</dt><dd>${esc(c.author)}</dd>` : ''}
+        <dt>Country</dt><dd>${esc(c.country)}</dd>
+        <dt>Volume</dt><dd>${esc(c.volume)} ml</dd>
+        <dt>Year</dt><dd>${esc(c.year)}</dd>
+        <dt>Shape</dt><dd>${esc(SHAPE[c.shape] || '—')}</dd>
+        ${c.author ? `<dt>Published by</dt><dd>${esc(c.author)}</dd>` : ''}
       </dl>
       <p>${esc(c.description)}</p>
       <div class="row">
-        <button data-k="owned" class="${inList('owned') ? 'on' : ''}">${inList('owned') ? 'Есть в коллекции' : 'Добавить в коллекцию'}</button>
-        <button data-k="wish" class="${inList('wish') ? 'on' : ''}">${inList('wish') ? 'В желаемом' : 'Добавить в желаемое'}</button>
+        <button data-k="owned" class="${inList('owned') ? 'on' : ''}">${inList('owned') ? 'In my collection' : 'Add to collection'}</button>
+        <button data-k="wish" class="${inList('wish') ? 'on' : ''}">${inList('wish') ? 'In wishlist' : 'Add to wishlist'}</button>
       </div>
     </div></div>`;
   $('#dbody').onclick = e => {
@@ -274,8 +280,8 @@ async function showBrand(brand) {
   try {
     const d = await api('/api/series?brand=' + encodeURIComponent(brand));
     $('#sFolders').innerHTML = d.items.length
-      ? d.items.map(seriesTile).join('')
-      : '<div class="empty">В этом бренде пока нет папок вкусов/серий. Создайте первую кнопкой с иконкой папки.</div>';
+      ? byName(d.items).map(seriesTile).join('')
+      : '<div class="empty">This brand has no flavor/series folders yet. Create the first one with the folder button.</div>';
   } catch (e) { $('#sFolders').innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
 async function showSeries(id) {
@@ -297,13 +303,13 @@ function route() {
 
 // ---------- вход и регистрация ----------
 function updateAuth() {
-  $('#who').textContent = me ? 'Вы: ' + me : '';
-  $('#authBtn').textContent = me ? 'Выйти' : 'Войти / Регистрация';
+  $('#who').textContent = me ? 'You: ' + me : '';
+  $('#authBtn').textContent = me ? 'Log out' : 'Log in / Sign up';
 }
 function setMode(m) {
   mode = m;
   $('#tLogin').classList.toggle('on', m === 'login'); $('#tReg').classList.toggle('on', m === 'register');
-  $('#aSubmit').textContent = m === 'login' ? 'Войти' : 'Зарегистрироваться';
+  $('#aSubmit').textContent = m === 'login' ? 'Log in' : 'Sign up';
   $('#aPass').autocomplete = m === 'login' ? 'current-password' : 'new-password';
   $('#aErr').textContent = '';
 }
@@ -343,13 +349,13 @@ $('#pBrand').onchange = async () => {
   const b = $('#pBrand').value; $('#pSerWrap').hidden = !b; if (!b) return;
   try {
     const d = await api('/api/series?brand=' + encodeURIComponent(b));
-    $('#pSeries').innerHTML = d.items.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
-    $('#pHint').textContent = d.items.length ? '' : 'В этом бренде ещё нет папок. Сначала создайте её кнопкой с иконкой папки.';
+    $('#pSeries').innerHTML = byName(d.items).map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+    $('#pHint').textContent = d.items.length ? '' : 'This brand has no folders yet. Create one first with the folder button.';
   } catch (e) { $('#pHint').textContent = e.message; }
 };
 $('#pubForm').onsubmit = async e => {
   e.preventDefault();
-  const btn = $('#pSubmit'); btn.disabled = true; $('#pErr').textContent = 'Загрузка…';
+  const btn = $('#pSubmit'); btn.disabled = true; $('#pErr').textContent = 'Uploading…';
   const fd = new FormData($('#pubForm')), sid = fd.get('series_id');
   try {
     await api('/api/cans', {method: 'POST', body: fd});
