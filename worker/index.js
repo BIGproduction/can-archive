@@ -167,6 +167,85 @@ async function seriesCreate(request, env) {
   }
 }
 
+const NEED_LOGIN = { error: 'Please log in or sign up first' };
+
+async function profileGet(request, env) {
+  const u = await currentUser(request, env);
+  if (!u) return json(NEED_LOGIN, 401);
+  const row = await env.DB.prepare('SELECT avatar, start_year, countries FROM users WHERE id = ?').bind(u.id).first();
+  const owned = await env.DB.prepare("SELECT COUNT(*) n FROM user_cans WHERE user_id = ? AND kind = 'owned'").bind(u.id).first();
+  const brands = await env.DB.prepare("SELECT c.brand AS brand, COUNT(*) AS n FROM user_cans uc JOIN cans c ON c.id = uc.can_id WHERE uc.user_id = ? AND uc.kind = 'owned' GROUP BY c.brand ORDER BY n DESC, c.brand").bind(u.id).all();
+  let countries = [];
+  try { countries = JSON.parse(row.countries || '[]'); } catch {}
+  return json({ nick: u.nick, avatar: row.avatar, start_year: row.start_year, countries, owned: owned.n, brands: brands.results });
+}
+
+async function profileSave(request, env) {
+  const u = await currentUser(request, env);
+  if (!u) return json(NEED_LOGIN, 401);
+  const b = await request.json().catch(() => ({}));
+  if ('start_year' in b) {
+    const y = b.start_year === null || b.start_year === '' ? null : Number(b.start_year);
+    if (y !== null && (!Number.isInteger(y) || y < 1900 || y > 2100)) return json({ error: 'Year: a number from 1900 to 2100' }, 400);
+    await env.DB.prepare('UPDATE users SET start_year = ? WHERE id = ?').bind(y, u.id).run();
+  }
+  if ('countries' in b) {
+    const c = b.countries;
+    if (!Array.isArray(c) || c.length > 300 || !c.every(x => typeof x === 'string' && /^[\p{L}\p{N} :.'()-]{1,40}$/u.test(x))) return json({ error: 'Invalid country list' }, 400);
+    await env.DB.prepare('UPDATE users SET countries = ? WHERE id = ?').bind(JSON.stringify([...new Set(c)]), u.id).run();
+  }
+  return json({ ok: true });
+}
+
+async function avatarSet(request, env) {
+  const u = await currentUser(request, env);
+  if (!u) return json(NEED_LOGIN, 401);
+  if (!env.PHOTOS) return json({ error: 'Photo storage is not connected' }, 501);
+  const f = await request.formData().catch(() => null);
+  const file = f && f.get('file');
+  if (!file || typeof file !== 'object' || !TYPES[file.type] || !file.size || file.size > 5 * 1024 * 1024) return json({ error: 'Photo: JPG, PNG or WebP, up to 5 MB' }, 400);
+  const key = `avatars/${u.id}-${Date.now()}.${TYPES[file.type]}`;
+  await env.PHOTOS.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
+  const old = await env.DB.prepare('SELECT avatar FROM users WHERE id = ?').bind(u.id).first();
+  await env.DB.prepare('UPDATE users SET avatar = ? WHERE id = ?').bind(key, u.id).run();
+  if (old && old.avatar) await env.PHOTOS.delete(old.avatar);
+  return json({ avatar: key });
+}
+
+async function avatarDelete(request, env) {
+  const u = await currentUser(request, env);
+  if (!u) return json(NEED_LOGIN, 401);
+  const old = await env.DB.prepare('SELECT avatar FROM users WHERE id = ?').bind(u.id).first();
+  await env.DB.prepare('UPDATE users SET avatar = NULL WHERE id = ?').bind(u.id).run();
+  if (old && old.avatar && env.PHOTOS) await env.PHOTOS.delete(old.avatar);
+  return json({ ok: true });
+}
+
+async function collectionGet(request, env) {
+  const u = await currentUser(request, env);
+  if (!u) return json(NEED_LOGIN, 401);
+  const rows = await env.DB.prepare('SELECT can_id, kind FROM user_cans WHERE user_id = ?').bind(u.id).all();
+  return json({
+    owned: rows.results.filter(r => r.kind === 'owned').map(r => r.can_id),
+    wish: rows.results.filter(r => r.kind === 'wish').map(r => r.can_id)
+  });
+}
+
+async function collectionSet(request, env) {
+  const u = await currentUser(request, env);
+  if (!u) return json(NEED_LOGIN, 401);
+  const { id, kind, on } = await request.json().catch(() => ({}));
+  if (!['owned', 'wish'].includes(kind) || !Number.isInteger(id)) return json({ error: 'Invalid data' }, 400);
+  if (on) {
+    const can = await env.DB.prepare('SELECT id FROM cans WHERE id = ?').bind(id).first();
+    if (!can) return json({ error: 'Can not found' }, 404);
+    await env.DB.prepare('INSERT OR IGNORE INTO user_cans (user_id, can_id, kind) VALUES (?, ?, ?)').bind(u.id, id, kind).run();
+  } else {
+    await env.DB.prepare('DELETE FROM user_cans WHERE user_id = ? AND can_id = ? AND kind = ?').bind(u.id, id, kind).run();
+  }
+  return json({ ok: true });
+}
+
 async function image(env, key) {
   if (!key || key.includes('..')) return new Response('Bad request', { status: 400 });
   const o = await env.PHOTOS.get(key);
@@ -181,6 +260,9 @@ async function handle(request, env) {
       if (o && o !== url.origin) return json({ error: 'Forbidden' }, 403);
     }
     if (p === '/api/cans') return m === 'POST' ? publish(request, env) : cans(url.searchParams, env);
+    if (p === '/api/profile') return m === 'POST' ? profileSave(request, env) : profileGet(request, env);
+    if (p === '/api/avatar') return m === 'POST' ? avatarSet(request, env) : m === 'DELETE' ? avatarDelete(request, env) : json({ error: 'Method not allowed' }, 405);
+    if (p === '/api/collection') return m === 'POST' ? collectionSet(request, env) : collectionGet(request, env);
     if (p === '/api/series') return m === 'POST' ? seriesCreate(request, env) : seriesList(url.searchParams, env);
     if (p === '/api/me') { const u = await currentUser(request, env); return json({ nick: u ? u.nick : null }); }
     if (p === '/api/register' && m === 'POST') return register(request, env);
