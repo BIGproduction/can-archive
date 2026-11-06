@@ -6,18 +6,21 @@
 <title>BIG_archive</title>
 <style>
 :root{--bg:#e8ecef;--card:#f7f9fa;--ink:#0f1b24;--mut:#5d6b76;--ac:#2457ff;--bd:#cfd6db}
-@media(prefers-color-scheme:dark){:root{--bg:#10171d;--card:#18222b;--ink:#e9eef2;--mut:#8b99a4;--ac:#6f93ff;--bd:#2b3945}}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10171d;--card:#18222b;--ink:#e9eef2;--mut:#8b99a4;--ac:#6f93ff;--bd:#2b3945}}
+:root[data-theme="dark"]{--bg:#10171d;--card:#18222b;--ink:#e9eef2;--mut:#8b99a4;--ac:#6f93ff;--bd:#2b3945}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 "Segoe UI",system-ui,sans-serif}
 header{padding:20px 16px 8px;display:flex;flex-wrap:wrap;gap:4px 24px;align-items:baseline}
 h1{margin:0;font-size:26px;font-weight:700;letter-spacing:-.01em}
 .stat{color:var(--mut);font-size:14px}
-.auth{margin-left:auto;font-size:14px;color:var(--mut);display:flex;gap:8px;align-items:center}
+.auth{margin-left:auto;align-self:flex-start;font-size:14px;color:var(--mut);display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.arow{display:flex;gap:8px;align-items:center}
 .pubbar{padding:8px 16px;display:flex;gap:8px}
 input,select,textarea,button{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--bd);border-radius:6px;padding:9px 10px;min-width:0}
 button{cursor:pointer}
 .primary{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:600;padding:10px 20px}
 .sq{width:44px;height:44px;padding:0;display:grid;place-items:center}
+#serBtn{background:var(--ac);border-color:var(--ac);color:#fff}
 .sq svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8}
 :focus-visible{outline:2px solid var(--ac);outline-offset:2px}
 .six{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;padding:8px 16px}
@@ -28,17 +31,10 @@ button{cursor:pointer}
 .bbox{aspect-ratio:1;border:4px solid #0b0b0b;border-radius:18px;overflow:hidden;position:relative;background:var(--card)}
 .mos{position:absolute;inset:0;display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:1fr}
 .mos i{background:var(--bd) center/cover no-repeat}
-.badge{position:absolute;left:8px;top:8px;width:36px;height:36px;border-radius:50%;background:#3a63b8;border:3px solid #0b0b0b;display:grid;place-items:center}
-.badge svg{width:20px;height:20px;fill:#f6b73c;stroke:#c98a12;stroke-width:1.2}
-.ribbon{position:absolute;left:5%;right:5%;bottom:14%;background:#d9d2a3;color:#1b1b1b;text-align:center;font-weight:800;font-size:clamp(12px,1.8vw,20px);padding:6px 4px;clip-path:polygon(0 0,100% 0,97% 50%,100% 100%,0 100%,3% 50%)}
+.badge{position:absolute;left:8px;top:8px;width:24%;aspect-ratio:1;display:block}
+.fico{display:block;width:100%;height:auto}
+.tile:hover .fico{filter:brightness(1.08)}
 .tile:hover .bbox,.tile:focus-visible .bbox{border-color:var(--ac)}
-.fold{position:relative;aspect-ratio:1.1}
-.fold::before{content:"";position:absolute;left:0;top:0;width:45%;height:14%;background:#3d74c2;border-radius:10px 10px 0 0}
-.fold .back{position:absolute;inset:10% 0 0;background:#3d74c2;border-radius:10px}
-.paper{position:absolute;left:6%;right:6%;top:16%;height:58%;background:#f3f3f3;border-radius:4px;display:flex;gap:3%;padding:3%}
-.paper i{flex:1;background:#ddd center/cover no-repeat;border-radius:2px}
-.fold .front{position:absolute;left:0;right:0;bottom:0;height:60%;background:linear-gradient(#5b9be6,#4a86d8);border-radius:10px}
-.tile:hover .front{filter:brightness(1.1)}
 .grid{gap:12px}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:6px;overflow:hidden;cursor:pointer}
 .ph{aspect-ratio:2/3;background:var(--bd) center/cover no-repeat;position:relative}
@@ -73,13 +69,14 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 @media(max-width:720px){#sFolders{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:720px){.six{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
+<script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body>
 <header>
   <h1>BIG_archive</h1>
   <span class="stat">Cans in archive: <b id="all">0</b></span>
   <span class="stat">In your collection: <b id="nOwned">0</b> · Wishlist: <b id="nWish">0</b></span>
-  <span class="auth"><span id="who"></span><button id="authBtn">Log in / Sign up</button></span>
+  <span class="auth"><span class="arow"><span id="who"></span><button id="authBtn">Log in / Sign up</button></span><button class="sq" id="themeBtn" aria-label="Toggle light or dark theme"></button></span>
 </header>
 
 <div class="pubbar">
@@ -92,12 +89,12 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 <section id="home">
   <form class="six filters" id="f" onsubmit="return false">
     <input id="q" type="search" placeholder="Search by name">
-    <select id="brand"><option value="">All brands</option></select>
-    <select id="country"><option value="">All countries</option></select>
-    <select id="volume"><option value="">Any volume</option></select>
-    <select id="year"><option value="">Any year</option></select>
+    <select id="brand"><option value="">Brands</option></select>
+    <select id="country"><option value="">Countries</option></select>
+    <select id="volume"><option value="">Volume</option></select>
+    <select id="year"><option value="">Year</option></select>
     <select id="shape">
-      <option value="">Any shape</option>
+      <option value="">Shape</option>
       <option value="slim">Slim</option>
       <option value="wide">Wide</option>
     </select>
@@ -183,9 +180,9 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const img = k => k ? `style="background-image:url('/img/${encodeURI(k)}')"` : '';
 const opts = (list, first, fmt = v => v) => (first ? `<option value="">${first}</option>` : '') + list.map(v => `<option value="${esc(v)}">${esc(fmt(v))}</option>`).join('');
 const bg = k => `style="background-image:url('/img/${encodeURI(k)}')"`;
-const FOLDER = '<svg viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18z"/></svg>';
-const brandTile = b => `<div class="tile" tabindex="0" data-b="${esc(b)}"><div class="bbox"><div class="mos">${(meta.covers?.[b] || []).map(k => `<i ${bg(k)}></i>`).join('')}</div><span class="badge">${FOLDER}</span><span class="ribbon">${esc(b)}</span></div><div class="cap">${esc(b)}</div></div>`;
-const seriesTile = s => `<div class="tile" tabindex="0" data-s="${s.id}"><div class="fold"><div class="back"></div><div class="paper">${(s.covers || []).map(k => `<i ${bg(k)}></i>`).join('')}</div><div class="front"></div></div><div class="cap">${esc(s.name)}</div></div>`;
+const brandTile = b => `<div class="tile" tabindex="0" data-b="${esc(b)}"><div class="bbox"><div class="mos">${(meta.covers?.[b] || []).map(k => `<i ${bg(k)}></i>`).join('')}</div><img class="badge" src="/folder-badge.png" alt=""></div><div class="cap">${esc(b)}</div></div>`;
+const FICON = '<svg class="fico" viewBox="0 0 1335 1180" aria-hidden="true"><path d="M85 190Q85 50 190 50H440Q510 50 560 100L600 140Q640 180 700 180H1190Q1255 180 1255 245V420H85Z" fill="#348bee"/><rect x="163" y="228" width="1008" height="300" rx="45" fill="#f2f2f7"/><rect x="75" y="322" width="1185" height="765" rx="90" fill="#3d99fb"/></svg>';
+const seriesTile = s => `<div class="tile" tabindex="0" data-s="${s.id}">${FICON}<div class="cap">${esc(s.name)}</div></div>`;
 const coll = new Intl.Collator(['ru', 'en'], {numeric: true, sensitivity: 'base'});
 const byName = a => [...a].sort((x, y) => coll.compare(x.name, y.name));
 const counters = () => { $('#nOwned').textContent = get('owned').length; $('#nWish').textContent = get('wish').length; };
@@ -202,10 +199,10 @@ function fill(sel, html) { const v = $(sel).value; $(sel).innerHTML = html; $(se
 async function loadMeta() {
   try { meta = await api('/api/cans?meta=1'); } catch { return; }
   $('#all').textContent = meta.all;
-  fill('#brand', opts(meta.brands, 'All brands'));
-  fill('#country', opts(meta.countries, 'All countries'));
-  fill('#volume', opts(meta.volumes, 'Any volume', v => v + ' ml'));
-  fill('#year', opts(meta.years, 'Any year'));
+  fill('#brand', opts(meta.brands, 'Brands'));
+  fill('#country', opts(meta.countries, 'Countries'));
+  fill('#volume', opts(meta.volumes, 'Volume', v => v + ' ml'));
+  fill('#year', opts(meta.years, 'Year'));
   $('#countries').innerHTML = meta.countries.map(v => `<option value="${esc(v)}">`).join('');
   $('#pBrand').innerHTML = opts(meta.brands, 'Select a brand');
   $('#sBrand').innerHTML = opts(meta.brands, 'Select a brand');
@@ -386,7 +383,14 @@ $('#back').onclick = () => { $('#f').reset(); showHome(); };
 let t; $('#f').addEventListener('input', () => { clearTimeout(t); t = setTimeout(showHome, 250); });
 addEventListener('hashchange', route);
 
+const SUN = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>';
+const MOON = '<svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></svg>';
+const isDark = () => document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+function applyTheme() { $('#themeBtn').innerHTML = isDark() ? SUN : MOON; $('#themeBtn').title = isDark() ? 'Switch to light theme' : 'Switch to dark theme'; }
+$('#themeBtn').onclick = () => { const t = isDark() ? 'light' : 'dark'; document.documentElement.dataset.theme = t; try { localStorage.setItem('theme', t); } catch {} applyTheme(); };
+
 (async () => {
+  applyTheme();
   counters();
   try { me = (await api('/api/me')).nick; } catch {}
   updateAuth(); await loadMeta(); route();
