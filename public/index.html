@@ -64,6 +64,31 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 .err{color:#d6336c;font-size:14px;min-height:20px}
 .hint{color:var(--mut);font-size:13px}
 .tabs{display:flex;gap:8px}
+.prof-dlg{width:min(940px,96vw)}
+.prof{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:16px}
+.pcard{border:1px solid var(--bd);border-radius:26px;padding:18px 22px;background:var(--card);color:var(--ink);text-align:left}
+.pcard h3{margin:0 0 10px;font-size:22px}
+.ptop{grid-column:1/-1;display:flex;gap:22px;align-items:center}
+.avatar{width:150px;height:150px;border-radius:22px;background:var(--bd) center/cover no-repeat}
+.arow2{display:flex;gap:6px;margin-top:8px}
+.arow2 button{padding:5px 10px;font-size:13px}
+.vr{width:2px;align-self:stretch;background:var(--ink);opacity:.5}
+.pinfo{display:grid;gap:6px;font-size:18px}
+.pinfo input{width:96px}
+.pbrands{max-height:230px;overflow:auto;display:grid;gap:6px;font-size:18px}
+.pright{display:grid;gap:14px;grid-template-rows:1fr 1fr}
+.plink{display:flex;align-items:center;gap:16px;cursor:pointer;font-size:18px}
+.plink svg{width:64px;height:64px;fill:none;stroke:currentColor;stroke-width:1.4;flex:none}
+.plink .arr{margin-left:auto;font-size:30px}
+.pblank{min-height:80px}
+.mapbox{background:#fff;margin:8px 16px 24px;border:1px solid var(--bd);border-radius:12px;overflow:hidden;touch-action:none;min-height:120px}
+.mapbox svg{display:block;width:100%;height:auto}
+.mapbox path{fill:#cfd8dc;stroke:#fff;stroke-width:.5;vector-effect:non-scaling-stroke;cursor:pointer}
+.mapbox path:hover{fill:#9fb0ba}
+.mapbox path.on{fill:#2457ff}
+.mapbox path.on:hover{fill:#1a3fc0}
+.mapbox .empty{color:#5d6b76}
+@media(max-width:720px){.prof{grid-template-columns:1fr}.ptop{flex-direction:column;align-items:flex-start}.vr{display:none}.avatar{width:120px;height:120px}}
 [hidden]{display:none!important}
 #sFolders{grid-template-columns:repeat(9,minmax(0,1fr))}
 #sFolders .cap{font-size:13px}
@@ -78,7 +103,7 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
   <h1>BIG_archive</h1>
   <span class="stat">Cans in archive: <b id="all">0</b></span>
   <span class="stat">In your collection: <b id="nOwned">0</b> · Wishlist: <b id="nWish">0</b></span>
-  <span class="auth"><span class="arow"><span id="who"></span><button id="authBtn">Log in / Sign up</button></span></span>
+  <span class="auth"><span class="arow"><button id="profBtn" hidden>Profile</button><button id="authBtn">Log in / Sign up</button></span></span>
 </header>
 
 <div class="pubbar">
@@ -120,6 +145,42 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
   <div class="six grid" id="sgrid"></div>
   <button class="more" id="smore" hidden>Show more</button>
 </section>
+
+<section id="mapPage" hidden>
+  <div class="bar"><a class="link" href="#">← Back</a><h2>Countries map</h2><span class="stat">Marked: <b id="mapCount">0</b></span></div>
+  <p class="stat" style="padding:0 16px">Click a country to mark it as part of your collection, click again to unmark. Scroll or pinch to zoom, drag to move.</p>
+  <div id="mapBox" class="mapbox"></div>
+</section>
+
+<dialog id="profDlg" class="prof-dlg">
+  <button class="close" data-close>Close</button>
+  <div class="prof">
+    <div class="pcard ptop">
+      <div>
+        <div class="avatar" id="avatar"></div>
+        <div class="arow2"><button type="button" id="avUp">Upload photo</button><button type="button" id="avDel">Remove</button></div>
+        <input type="file" id="avFile" accept="image/jpeg,image/png,image/webp" hidden>
+      </div>
+      <div class="vr"></div>
+      <div class="pinfo">
+        <h3>Information:</h3>
+        <div>Nickname - <b id="pNick"></b></div>
+        <div>Cans in collection - <b id="pCans">0</b> pcs.</div>
+        <div>Countries in collection - <b id="pCountries">0</b> on map</div>
+        <div>Collection start - <input type="number" id="pYear" min="1900" max="2100" placeholder="year"> y.</div>
+        <div class="err" id="profErr"></div>
+      </div>
+    </div>
+    <div class="pcard"><h3>Brand count:</h3><div class="pbrands" id="pBrands"></div></div>
+    <div class="pright">
+      <button type="button" class="pcard plink" id="openMap">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/></svg>
+        <span>Open map<br>of available cans</span><span class="arr">›</span>
+      </button>
+      <div class="pcard pblank"></div>
+    </div>
+  </div>
+</dialog>
 
 <dialog id="dlg"><button class="close" data-close>Close</button><div id="dbody"></div></dialog>
 
@@ -177,8 +238,8 @@ const SHAPE = {slim: 'Slim', wide: 'Wide'};
 let me = null, meta = {brands: [], counts: {}, countries: [], volumes: [], years: [], all: 0};
 let st = {page: 0, total: 0, items: []}, cur = null, mode = 'login', afterAuth = null;
 
-const get = k => { try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch { return []; } };
-const put = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+const mine = {owned: new Set(), wish: new Set()};
+let profile = null;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const img = k => k ? `style="background-image:url('/img/${encodeURI(k)}')"` : '';
 const opts = (list, first, fmt = v => v) => (first ? `<option value="">${first}</option>` : '') + list.map(v => `<option value="${esc(v)}">${esc(fmt(v))}</option>`).join('');
@@ -188,7 +249,7 @@ const FICON = '<svg class="fico" viewBox="0 0 1335 1180" aria-hidden="true"><pat
 const seriesTile = s => `<div class="tile" tabindex="0" data-s="${s.id}">${FICON}<div class="cap">${esc(s.name)}</div></div>`;
 const coll = new Intl.Collator(['ru', 'en'], {numeric: true, sensitivity: 'base'});
 const byName = a => [...a].sort((x, y) => coll.compare(x.name, y.name));
-const counters = () => { $('#nOwned').textContent = get('owned').length; $('#nWish').textContent = get('wish').length; };
+const counters = () => { $('#nOwned').textContent = mine.owned.size; $('#nWish').textContent = mine.wish.size; };
 
 async function api(path, opt = {}) {
   const r = await fetch(path, {cache: 'no-store', ...opt});
@@ -224,18 +285,18 @@ async function loadList(base, ui, more) {
   render();
 }
 function render() {
-  const owned = get('owned'), wish = get('wish');
+  const owned = mine.owned, wish = mine.wish;
   if (cur.found) $(cur.found).textContent = st.total;
   $(cur.grid).innerHTML = st.items.length ? st.items.map(c => `
     <div class="card" tabindex="0" data-id="${c.id}">
-      <div class="ph" ${img(c.cover || c.photo)}>${owned.includes(c.id) ? '<span class="mark">owned</span>' : wish.includes(c.id) ? '<span class="mark">wish</span>' : ''}</div>
+      <div class="ph" ${img(c.cover || c.photo)}>${owned.has(c.id) ? '<span class="mark">owned</span>' : wish.has(c.id) ? '<span class="mark">wish</span>' : ''}</div>
       <p><b>${esc(c.brand)}</b>${esc(c.name)}<br>${esc(c.volume)} ml · ${esc(c.year)}</p>
     </div>`).join('') : '<div class="empty">No cans here yet.</div>';
   $(cur.more).hidden = st.items.length >= st.total;
 }
 function openCan(id) {
   const c = st.items.find(x => x.id === id); if (!c) return;
-  const inList = k => get(k).includes(id);
+  const inList = k => mine[k].has(id);
   $('#dbody').innerHTML = `<div class="dlg">
     <div class="ph" ${img(c.photo || c.cover)}></div>
     <div>
@@ -255,15 +316,19 @@ function openCan(id) {
     </div></div>`;
   $('#dbody').onclick = e => {
     const k = e.target.dataset.k; if (!k) return;
-    const l = get(k), i = l.indexOf(id);
-    i < 0 ? l.push(id) : l.splice(i, 1);
-    put(k, l); counters(); render(); openCan(id);
+    needAuth(async () => {
+      const on = !mine[k].has(id);
+      try { await api('/api/collection', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id, kind: k, on})}); }
+      catch (err) { alert(err.message); return; }
+      on ? mine[k].add(id) : mine[k].delete(id);
+      counters(); render(); openCan(id);
+    });
   };
   if (!$('#dlg').open) $('#dlg').showModal();
 }
 
 // ---------- страницы ----------
-const show = id => ['home', 'brandPage', 'seriesPage'].forEach(s => $('#' + s).hidden = s !== id);
+const show = id => ['home', 'brandPage', 'seriesPage', 'mapPage'].forEach(s => $('#' + s).hidden = s !== id);
 function filterParams() {
   const p = new URLSearchParams();
   for (const k of ['q', 'brand', 'country', 'volume', 'year', 'shape']) { const v = $('#' + k).value.trim(); if (v) p.set(k, v); }
@@ -297,13 +362,14 @@ function route() {
   const [t, v] = location.hash.slice(1).split('/');
   if (t === 'b' && v) showBrand(decodeURIComponent(v));
   else if (t === 's' && v) showSeries(+v);
+  else if (t === 'map') showMap();
   else showHome();
   window.scrollTo(0, 0);
 }
 
 // ---------- вход и регистрация ----------
 function updateAuth() {
-  $('#who').textContent = me ? 'You: ' + me : '';
+  $('#profBtn').hidden = !me;
   $('#authBtn').textContent = me ? 'Log out' : 'Log in / Sign up';
 }
 function setMode(m) {
@@ -315,7 +381,7 @@ function setMode(m) {
 }
 function needAuth(action) { if (me) return action(); afterAuth = action; setMode('register'); $('#authDlg').showModal(); }
 $('#authBtn').onclick = async () => {
-  if (me) { try { await api('/api/logout', {method: 'POST'}); } catch {} me = null; updateAuth(); }
+  if (me) { try { await api('/api/logout', {method: 'POST'}); } catch {} me = null; clearColl(); updateAuth(); }
   else { afterAuth = null; setMode('login'); $('#authDlg').showModal(); }
 };
 $('#tLogin').onclick = () => setMode('login');
@@ -325,8 +391,9 @@ $('#authForm').onsubmit = async e => {
   try {
     const r = await api('/api/' + mode, {method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({nick: $('#aNick').value.trim(), password: $('#aPass').value})});
-    me = r.nick; updateAuth(); $('#authForm').reset(); $('#authDlg').close();
+    me = r.nick; updateAuth(); await loadColl(); $('#authForm').reset(); $('#authDlg').close();
     const a = afterAuth; afterAuth = null; if (a) a();
+    if (location.hash === '#map') route();
   } catch (err) { $('#aErr').textContent = err.message; }
 };
 $('#authDlg').addEventListener('close', () => { afterAuth = null; });
@@ -392,11 +459,105 @@ const isDark = () => document.documentElement.dataset.theme ? document.documentE
 function applyTheme() { $('#themeBtn').innerHTML = isDark() ? SUN : MOON; $('#themeBtn').title = isDark() ? 'Switch to light theme' : 'Switch to dark theme'; }
 $('#themeBtn').onclick = () => { const t = isDark() ? 'light' : 'dark'; document.documentElement.dataset.theme = t; try { localStorage.setItem('theme', t); } catch {} applyTheme(); };
 
+// ---------- collection (stored in the account) ----------
+async function loadColl() {
+  mine.owned = new Set(); mine.wish = new Set();
+  if (me) { try { const d = await api('/api/collection'); mine.owned = new Set(d.owned); mine.wish = new Set(d.wish); } catch {} }
+  counters(); if (cur) render();
+}
+function clearColl() { mine.owned = new Set(); mine.wish = new Set(); counters(); if (cur) render(); }
+
+// ---------- profile ----------
+async function openProfile() {
+  try { profile = await api('/api/profile'); } catch (e) { alert(e.message); return; }
+  $('#profErr').textContent = ''; fillProfile(); $('#profDlg').showModal();
+}
+function fillProfile() {
+  $('#pNick').textContent = profile.nick;
+  $('#pCans').textContent = profile.owned;
+  $('#pCountries').textContent = profile.countries.length;
+  $('#pYear').value = profile.start_year ?? '';
+  $('#avatar').style.backgroundImage = profile.avatar ? `url('/img/${encodeURI(profile.avatar)}')` : '';
+  $('#avDel').hidden = !profile.avatar;
+  $('#pBrands').innerHTML = profile.brands.length
+    ? profile.brands.map(b => `<div>${esc(b.brand)} - ${b.n}</div>`).join('')
+    : '<div class="stat">No cans in your collection yet.</div>';
+}
+$('#profBtn').onclick = openProfile;
+$('#avUp').onclick = () => $('#avFile').click();
+$('#avFile').onchange = async () => {
+  const f = $('#avFile').files[0]; if (!f) return;
+  const fd = new FormData(); fd.append('file', f);
+  try { const r = await api('/api/avatar', {method: 'POST', body: fd}); profile.avatar = r.avatar; $('#profErr').textContent = ''; fillProfile(); }
+  catch (e) { $('#profErr').textContent = e.message; }
+  $('#avFile').value = '';
+};
+$('#avDel').onclick = async () => {
+  try { await api('/api/avatar', {method: 'DELETE'}); profile.avatar = null; fillProfile(); }
+  catch (e) { $('#profErr').textContent = e.message; }
+};
+$('#pYear').onchange = async () => {
+  const v = $('#pYear').value.trim(), y = v === '' ? null : Number(v);
+  try {
+    await api('/api/profile', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({start_year: y})});
+    profile.start_year = y; $('#profErr').textContent = '';
+  } catch (e) { $('#profErr').textContent = e.message; }
+};
+$('#openMap').onclick = () => { $('#profDlg').close(); location.hash = 'map'; };
+
+// ---------- countries map (libraries and map data load from the jsDelivr CDN) ----------
+const LIBS = ['https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js', 'https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js'];
+const ATLAS = 'https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-50m.json';
+const loadScript = src => new Promise((ok, no) => {
+  const el = document.createElement('script'); el.src = src; el.onload = ok;
+  el.onerror = () => no(new Error('Could not load the map library. Check your connection and reload.'));
+  document.head.appendChild(el);
+});
+let saveTimer;
+function saveCountries(list) {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try { await api('/api/profile', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({countries: list})}); }
+    catch (e) { alert('Could not save the map: ' + e.message); }
+  }, 600);
+}
+async function showMap() {
+  show('mapPage');
+  const box = $('#mapBox');
+  if (!me) { box.innerHTML = '<div class="empty">Log in to mark countries on your map.</div>'; return; }
+  box.innerHTML = '<div class="empty">Loading map…</div>';
+  try {
+    const [p, , , world] = await Promise.all([
+      api('/api/profile'),
+      window.d3 ? 0 : loadScript(LIBS[0]),
+      window.topojson ? 0 : loadScript(LIBS[1]),
+      fetch(ATLAS).then(r => { if (!r.ok) throw new Error('Could not load the map data'); return r.json(); })
+    ]);
+    const sel = new Set(p.countries), W = 960, H = 500;
+    const feats = topojson.feature(world, world.objects.countries).features;
+    const geo = d3.geoPath(d3.geoNaturalEarth1().fitExtent([[6, 6], [W - 6, H - 6]], {type: 'Sphere'}));
+    const key = f => f.id ? String(f.id) : 'n:' + f.properties.name;
+    box.innerHTML = '';
+    const svg = d3.select(box).append('svg').attr('viewBox', `0 0 ${W} ${H}`);
+    const g = svg.append('g');
+    g.selectAll('path').data(feats).join('path')
+      .attr('d', geo).attr('class', f => sel.has(key(f)) ? 'on' : null)
+      .on('click', (e, f) => {
+        const k = key(f); sel.has(k) ? sel.delete(k) : sel.add(k);
+        e.currentTarget.classList.toggle('on', sel.has(k));
+        $('#mapCount').textContent = sel.size; saveCountries([...sel]);
+      })
+      .append('title').text(f => f.properties.name);
+    svg.call(d3.zoom().scaleExtent([1, 14]).on('zoom', e => g.attr('transform', e.transform)));
+    $('#mapCount').textContent = sel.size;
+  } catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
 (async () => {
   applyTheme();
   counters();
   try { me = (await api('/api/me')).nick; } catch {}
-  updateAuth(); await loadMeta(); route();
+  updateAuth(); await loadColl(); await loadMeta(); route();
 })();
 </script>
 </body>
