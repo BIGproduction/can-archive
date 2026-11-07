@@ -58,7 +58,9 @@ dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:12px 0}
 dt{color:var(--mut)}dd{margin:0}
 .row{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 .on{background:var(--ac);color:#fff;border-color:var(--ac)}
-.close{float:right;margin:8px 8px 0 0}
+dialog>.close{position:absolute;top:10px;right:10px;margin:0;z-index:2}
+form.stack>h2:first-child,.tabs{padding-right:72px}
+#dbody{padding-top:46px}
 form.stack{display:grid;gap:10px;padding:16px}
 form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 .err{color:#d6336c;font-size:14px;min-height:20px}
@@ -68,7 +70,14 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 .prof{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:16px}
 .pcard{border:1px solid var(--bd);border-radius:26px;padding:18px 22px;background:var(--card);color:var(--ink);text-align:left}
 .pcard h3{margin:0 0 10px;font-size:22px}
-.ptop{grid-column:1/-1;display:flex;gap:22px;align-items:center}
+.ptop{grid-column:1/-1;display:grid;grid-template-columns:minmax(170px,.8fr) auto 2fr auto;gap:22px;align-items:center}
+.pav{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px}
+.pctl{align-self:start;display:flex;flex-direction:column;gap:8px}
+.pctl button{white-space:nowrap}
+.pedit{display:none}
+.editing .pedit{display:inline-block}
+.editing .arow2.pedit{display:flex}
+.editing .pview{display:none}
 .avatar{width:150px;height:150px;border-radius:22px;background:var(--bd) center/cover no-repeat}
 .arow2{display:flex;gap:6px;margin-top:8px}
 .arow2 button{padding:5px 10px;font-size:13px}
@@ -88,7 +97,7 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 .mapbox path.on{fill:#2457ff}
 .mapbox path.on:hover{fill:#1a3fc0}
 .mapbox .empty{color:#5d6b76}
-@media(max-width:720px){.prof{grid-template-columns:1fr}.ptop{flex-direction:column;align-items:flex-start}.vr{display:none}.avatar{width:120px;height:120px}}
+@media(max-width:720px){.prof{grid-template-columns:1fr}.ptop{grid-template-columns:1fr}.pctl{flex-direction:row;flex-wrap:wrap}.vr{display:none}.avatar{width:120px;height:120px}}
 [hidden]{display:none!important}
 #sFolders{grid-template-columns:repeat(9,minmax(0,1fr))}
 #sFolders .cap{font-size:13px}
@@ -153,12 +162,11 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 </section>
 
 <dialog id="profDlg" class="prof-dlg">
-  <button class="close" data-close>Close</button>
   <div class="prof">
     <div class="pcard ptop">
-      <div>
+      <div class="pav">
         <div class="avatar" id="avatar"></div>
-        <div class="arow2"><button type="button" id="avUp">Upload photo</button><button type="button" id="avDel">Remove</button></div>
+        <div class="arow2 pedit"><button type="button" id="avUp">Upload photo</button><button type="button" id="avDel">Remove</button></div>
         <input type="file" id="avFile" accept="image/jpeg,image/png,image/webp" hidden>
       </div>
       <div class="vr"></div>
@@ -167,8 +175,13 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
         <div>Nickname - <b id="pNick"></b></div>
         <div>Cans in collection - <b id="pCans">0</b> pcs.</div>
         <div>Countries in collection - <b id="pCountries">0</b> on map</div>
-        <div>Collection start - <input type="number" id="pYear" min="1900" max="2100" placeholder="year"> y.</div>
+        <div>Collection start - <b class="pview" id="pYearView">-</b><input class="pedit" type="number" id="pYear" min="1900" max="2100" placeholder="year"> y.</div>
         <div class="err" id="profErr"></div>
+      </div>
+      <div class="pctl">
+        <button type="button" data-close>Close</button>
+        <button type="button" id="editBtn">Edit profile</button>
+        <button type="button" class="primary" id="saveBtn" hidden>Save</button>
       </div>
     </div>
     <div class="pcard"><h3>Brand count:</h3><div class="pbrands" id="pBrands"></div></div>
@@ -468,41 +481,64 @@ async function loadColl() {
 function clearColl() { mine.owned = new Set(); mine.wish = new Set(); counters(); if (cur) render(); }
 
 // ---------- profile ----------
+let edit = null; // null = просмотр, объект = режим редактирования
 async function openProfile() {
   try { profile = await api('/api/profile'); } catch (e) { alert(e.message); return; }
-  $('#profErr').textContent = ''; fillProfile(); $('#profDlg').showModal();
+  $('#profErr').textContent = ''; setEdit(false); $('#profDlg').showModal();
+}
+function setEdit(on) {
+  if (edit && edit.preview) URL.revokeObjectURL(edit.preview);
+  edit = on ? {file: null, remove: false, preview: null} : null;
+  $('#profDlg').classList.toggle('editing', on);
+  $('#editBtn').textContent = on ? 'Cancel' : 'Edit profile';
+  $('#saveBtn').hidden = true;
+  $('#pYear').value = profile.start_year ?? '';
+  fillProfile();
 }
 function fillProfile() {
   $('#pNick').textContent = profile.nick;
   $('#pCans').textContent = profile.owned;
   $('#pCountries').textContent = profile.countries.length;
-  $('#pYear').value = profile.start_year ?? '';
-  $('#avatar').style.backgroundImage = profile.avatar ? `url('/img/${encodeURI(profile.avatar)}')` : '';
-  $('#avDel').hidden = !profile.avatar;
+  $('#pYearView').textContent = profile.start_year ?? '-';
+  const shown = edit && edit.file ? edit.preview : edit && edit.remove ? null : profile.avatar ? '/img/' + encodeURI(profile.avatar) : null;
+  $('#avatar').style.backgroundImage = shown ? `url('${shown}')` : '';
+  $('#avDel').hidden = !shown;
   $('#pBrands').innerHTML = profile.brands.length
     ? profile.brands.map(b => `<div>${esc(b.brand)} - ${b.n}</div>`).join('')
     : '<div class="stat">No cans in your collection yet.</div>';
 }
+const markDirty = () => { $('#saveBtn').hidden = false; };
 $('#profBtn').onclick = openProfile;
+$('#editBtn').onclick = () => setEdit(!edit);
 $('#avUp').onclick = () => $('#avFile').click();
-$('#avFile').onchange = async () => {
-  const f = $('#avFile').files[0]; if (!f) return;
-  const fd = new FormData(); fd.append('file', f);
-  try { const r = await api('/api/avatar', {method: 'POST', body: fd}); profile.avatar = r.avatar; $('#profErr').textContent = ''; fillProfile(); }
-  catch (e) { $('#profErr').textContent = e.message; }
-  $('#avFile').value = '';
+$('#avFile').onchange = () => {
+  const f = $('#avFile').files[0]; if (!f || !edit) return;
+  if (edit.preview) URL.revokeObjectURL(edit.preview);
+  edit.file = f; edit.remove = false; edit.preview = URL.createObjectURL(f);
+  $('#avFile').value = ''; fillProfile(); markDirty();
 };
-$('#avDel').onclick = async () => {
-  try { await api('/api/avatar', {method: 'DELETE'}); profile.avatar = null; fillProfile(); }
-  catch (e) { $('#profErr').textContent = e.message; }
-};
-$('#pYear').onchange = async () => {
-  const v = $('#pYear').value.trim(), y = v === '' ? null : Number(v);
+$('#avDel').onclick = () => { if (!edit) return; edit.file = null; edit.remove = true; fillProfile(); markDirty(); };
+$('#pYear').oninput = markDirty;
+$('#saveBtn').onclick = async () => {
+  if (!edit) return;
+  $('#profErr').textContent = ''; $('#saveBtn').disabled = true;
   try {
-    await api('/api/profile', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({start_year: y})});
-    profile.start_year = y; $('#profErr').textContent = '';
+    const v = $('#pYear').value.trim(), y = v === '' ? null : Number(v);
+    if (y !== (profile.start_year ?? null)) {
+      await api('/api/profile', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({start_year: y})});
+      profile.start_year = y;
+    }
+    if (edit.file) {
+      const fd = new FormData(); fd.append('file', edit.file);
+      profile.avatar = (await api('/api/avatar', {method: 'POST', body: fd})).avatar;
+    } else if (edit.remove && profile.avatar) {
+      await api('/api/avatar', {method: 'DELETE'}); profile.avatar = null;
+    }
+    setEdit(false);
   } catch (e) { $('#profErr').textContent = e.message; }
+  $('#saveBtn').disabled = false;
 };
+$('#profDlg').addEventListener('close', () => { if (edit) setEdit(false); });
 $('#openMap').onclick = () => { $('#profDlg').close(); location.hash = 'map'; };
 
 // ---------- countries map (libraries and map data load from the jsDelivr CDN) ----------
