@@ -80,30 +80,44 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 .pav{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px}
 .pctl{align-self:start;display:flex;flex-direction:column;gap:8px}
 .pctl button{white-space:nowrap}
-.pedit{display:none}
-.editing .pedit{display:inline-block}
-.editing .arow2.pedit{display:flex}
-.editing .pview{display:none}
 .avatar{width:150px;height:150px;border-radius:22px;background:var(--bd) center/cover no-repeat}
 .arow2{display:flex;gap:6px;margin-top:8px}
 .arow2 button{padding:5px 10px;font-size:13px}
 .vr{width:2px;align-self:stretch;background:var(--ink);opacity:.5}
 .pinfo{display:grid;gap:6px;font-size:18px}
-.pinfo input{width:96px}
+.pinfo>div:not(.err){min-height:40px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pinfo .num{width:150px}
+.prof-dlg{height:min(570px,92vh)}
+.prof{grid-template-rows:auto 1fr}
+.ptop{min-height:290px}
+.prof-dlg .pedit{display:none}
+.prof-dlg .arow2.pedit{display:flex;visibility:hidden}
+.prof-dlg.editing .pedit{display:inline-flex}
+.prof-dlg.editing .arow2.pedit{display:flex;visibility:visible}
+.prof-dlg.editing .pview{display:none}
+.num{display:flex;align-items:center;gap:8px;width:100%;padding:3px 3px 3px 14px;border:1px solid var(--bd);border-radius:18px;background:var(--card);box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 1px 6px rgba(0,0,0,.25)}
+.num:focus-within{outline:2px solid var(--ac);outline-offset:2px}
+.num input[type=number]{flex:1;min-width:0;width:auto;border:0;background:transparent;box-shadow:none;padding:5px 0;outline:none;-moz-appearance:textfield;appearance:textfield}
+.num input::-webkit-outer-spin-button,.num input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.spin{display:flex;flex-direction:column;width:34px;flex:none;overflow:hidden;border-radius:13px;background:color-mix(in srgb,var(--ink) 14%,var(--card));box-shadow:0 2px 6px rgba(0,0,0,.3)}
+.spin button{border:0;border-radius:0;background:transparent;color:var(--ink);padding:0;height:16px;display:grid;place-items:center}
+.spin button+button{border-top:1px solid color-mix(in srgb,var(--ink) 24%,transparent)}
+.spin svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
 .pbrands{max-height:230px;overflow:auto;display:grid;gap:6px;font-size:18px}
 .pright{display:grid;gap:14px;grid-template-rows:1fr 1fr}
 .plink{display:flex;align-items:center;gap:16px;cursor:pointer;font-size:18px}
 .plink svg{width:64px;height:64px;fill:none;stroke:currentColor;stroke-width:1.4;flex:none}
 .plink .arr{margin-left:auto;font-size:30px}
 .pblank{min-height:80px}
-.mapbox{background:#fff;margin:8px 16px 24px;border:1px solid var(--bd);border-radius:12px;overflow:hidden;touch-action:none;min-height:120px}
-.mapbox svg{display:block;width:100%;height:auto}
+.mapbox{background:#fff;margin:8px 16px 16px;border:1px solid var(--bd);border-radius:12px;overflow:hidden;touch-action:none;min-height:120px}
+.mapbox svg{display:block;width:100%;height:100%}
+.mapbox .labels text{fill:#263238;text-anchor:middle;dominant-baseline:central;pointer-events:none;paint-order:stroke;stroke:#fff;stroke-width:.35;stroke-linejoin:round;font-family:system-ui,sans-serif}
 .mapbox path{fill:#cfd8dc;stroke:#fff;stroke-width:.5;vector-effect:non-scaling-stroke;cursor:pointer}
 .mapbox path:hover{fill:#9fb0ba}
 .mapbox path.on{fill:#2457ff}
 .mapbox path.on:hover{fill:#1a3fc0}
 .mapbox .empty{color:#5d6b76}
-@media(max-width:720px){.prof{grid-template-columns:1fr}.ptop{grid-template-columns:1fr}.pctl{flex-direction:row;flex-wrap:wrap}.vr{display:none}.avatar{width:120px;height:120px}}
+@media(max-width:720px){.prof-dlg{height:auto}.prof{grid-template-columns:1fr}.ptop{grid-template-columns:1fr}.pctl{flex-direction:row;flex-wrap:wrap}.vr{display:none}.avatar{width:120px;height:120px}}
 [hidden]{display:none!important}
 #sFolders,#sgrid{grid-template-columns:repeat(9,minmax(0,1fr))}
 #sFolders .cap{font-size:13px}
@@ -182,7 +196,7 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
         <div>Nickname - <b id="pNick"></b></div>
         <div>Cans in collection - <b id="pCans">0</b> pcs.</div>
         <div>Countries in collection - <b id="pCountries">0</b> on map</div>
-        <div>Collection start - <b class="pview" id="pYearView">-</b><input class="pedit" type="number" id="pYear" min="1900" max="2100" placeholder="year"> y.</div>
+        <div>Collection start - <b class="pview" id="pYearView">-</b><span class="num pedit"><input type="number" id="pYear" min="1900" max="2100" placeholder="year"></span> y.</div>
         <div class="err" id="profErr"></div>
       </div>
       <div class="pctl">
@@ -243,8 +257,8 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
       <span class="hint" id="pHint"></span></label>
     <label>Name<input name="name" required maxlength="120"></label>
     <label>Country<input name="country" list="countries" required maxlength="60"></label>
-    <label>Volume, ml<input name="volume" type="number" min="1" max="5000" required></label>
-    <label>Year<input name="year" type="number" min="1900" max="2100" required></label>
+    <label>Volume, ml<span class="num"><input name="volume" type="number" min="1" max="5000" required></span></label>
+    <label>Year<span class="num"><input name="year" type="number" min="1900" max="2100" required></span></label>
     <label>Shape<select name="shape" required>
       <option value="slim">Slim</option><option value="wide">Wide</option></select></label>
     <label>Description<textarea name="description" rows="3" maxlength="2000"></textarea></label>
@@ -492,6 +506,19 @@ const isDark = () => document.documentElement.dataset.theme ? document.documentE
 function applyTheme() { $('#themeBtn').innerHTML = isDark() ? SUN : MOON; $('#themeBtn').title = isDark() ? 'Switch to light theme' : 'Switch to dark theme'; }
 $('#themeBtn').onclick = () => { const t = isDark() ? 'light' : 'dark'; document.documentElement.dataset.theme = t; try { localStorage.setItem('theme', t); } catch {} applyTheme(); };
 
+// ---------- number fields with custom arrows ----------
+const SPIN = '<span class="spin"><button type="button" class="up" tabindex="-1" aria-label="Increase"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button><button type="button" class="dn" tabindex="-1" aria-label="Decrease"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></span>';
+document.querySelectorAll('.num').forEach(n => {
+  n.insertAdjacentHTML('beforeend', SPIN);
+  const inp = n.querySelector('input');
+  const bump = up => {
+    try { up ? inp.stepUp() : inp.stepDown(); } catch {}
+    inp.dispatchEvent(new Event('input', {bubbles: true})); inp.dispatchEvent(new Event('change', {bubbles: true}));
+  };
+  n.querySelector('.up').onclick = () => bump(true);
+  n.querySelector('.dn').onclick = () => bump(false);
+});
+
 // ---------- enlarged photo ----------
 $('#zoomImg').onclick = () => $('#zoomDlg').classList.toggle('full');
 $('#zoomDlg').addEventListener('click', e => { if (e.target === $('#zoomDlg')) $('#zoomDlg').close(); });
@@ -581,9 +608,17 @@ function saveCountries(list) {
     catch (e) { alert('Could not save the map: ' + e.message); }
   }, 600);
 }
+function fitMapBox() {
+  const box = $('#mapBox');
+  const top = box.getBoundingClientRect().top + window.scrollY;
+  box.style.height = Math.max(240, window.innerHeight - top - 18) + 'px';
+}
+addEventListener('resize', () => { if (!$('#mapPage').hidden) fitMapBox(); });
+const n_ok = d => Number.isFinite(d.x) && Number.isFinite(d.y) && d.fs > 0.4 && d.n;
 async function showMap() {
   show('mapPage');
   const box = $('#mapBox');
+  fitMapBox();
   if (!me) { box.innerHTML = '<div class="empty">Log in to mark countries on your map.</div>'; return; }
   box.innerHTML = '<div class="empty">Loading map…</div>';
   try {
@@ -608,7 +643,22 @@ async function showMap() {
         $('#mapCount').textContent = sel.size; saveCountries([...sel]);
       })
       .append('title').text(f => f.properties.name);
-    svg.call(d3.zoom().scaleExtent([1, 14]).on('zoom', e => g.attr('transform', e.transform)));
+    const unit = Math.min(box.clientWidth / W, box.clientHeight / H) || 1;
+    const mainPart = f => {
+      if (f.geometry.type !== 'MultiPolygon') return f.geometry;
+      let best = null, ba = -1;
+      for (const coords of f.geometry.coordinates) { const part = {type: 'Polygon', coordinates: coords}, a = geo.area(part); if (a > ba) { ba = a; best = part; } }
+      return best;
+    };
+    const L = feats.map(f => {
+      const part = mainPart(f), n = f.properties.name || '', [x, y] = geo.centroid(part);
+      return {x, y, n, fs: Math.min(12, Math.sqrt(geo.area(part)) / Math.max(4, n.length * 0.5))};
+    }).filter(d => n_ok(d));
+    const labels = g.append('g').attr('class', 'labels').selectAll('text').data(L).join('text')
+      .attr('x', d => d.x).attr('y', d => d.y).attr('font-size', d => d.fs).text(d => d.n);
+    const upd = k => labels.attr('display', d => d.fs * k * unit >= 7 ? null : 'none');
+    upd(1);
+    svg.call(d3.zoom().scaleExtent([1, 14]).on('zoom', e => { g.attr('transform', e.transform); upd(e.transform.k); }));
     $('#mapCount').textContent = sel.size;
   } catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
