@@ -58,6 +58,12 @@ dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:12px 0}
 dt{color:var(--mut)}dd{margin:0}
 .row{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 .on{background:var(--ac);color:#fff;border-color:var(--ac)}
+.zbtn{width:43px;height:43px;padding:0;display:grid;place-items:center}
+.zbtn svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.zoom-dlg{width:min(96vw,1400px);max-height:96vh;background:var(--bg)}
+.zbox{overflow:auto;max-height:96vh;text-align:center}
+.zbox img{display:block;margin:0 auto;max-width:100%;max-height:92vh;object-fit:contain;cursor:zoom-in}
+.zoom-dlg.full .zbox img{max-width:none;max-height:none;cursor:zoom-out}
 dialog>.close{position:absolute;top:10px;right:10px;margin:0;z-index:2}
 form.stack>h2:first-child,.tabs{padding-right:72px}
 #dbody{padding-top:46px}
@@ -99,10 +105,11 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 .mapbox .empty{color:#5d6b76}
 @media(max-width:720px){.prof{grid-template-columns:1fr}.ptop{grid-template-columns:1fr}.pctl{flex-direction:row;flex-wrap:wrap}.vr{display:none}.avatar{width:120px;height:120px}}
 [hidden]{display:none!important}
-#sFolders{grid-template-columns:repeat(9,minmax(0,1fr))}
+#sFolders,#sgrid{grid-template-columns:repeat(9,minmax(0,1fr))}
 #sFolders .cap{font-size:13px}
-@media(max-width:1100px){#sFolders{grid-template-columns:repeat(6,minmax(0,1fr))}}
-@media(max-width:720px){#sFolders{grid-template-columns:repeat(3,minmax(0,1fr))}}
+#sgrid .card p{font-size:12px;padding:6px 8px}
+@media(max-width:1100px){#sFolders,#sgrid{grid-template-columns:repeat(6,minmax(0,1fr))}}
+@media(max-width:720px){#sFolders,#sgrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:720px){.six{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 <script>(function(){try{var x=localStorage.getItem("theme");if(x)document.documentElement.dataset.theme=x}catch(e){}})()</script>
@@ -193,6 +200,11 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
       <div class="pcard pblank"></div>
     </div>
   </div>
+</dialog>
+
+<dialog id="zoomDlg" class="zoom-dlg">
+  <button class="close" data-close>Close</button>
+  <div class="zbox"><img id="zoomImg" alt="Can photo"></div>
 </dialog>
 
 <dialog id="dlg"><button class="close" data-close>Close</button><div id="dbody"></div></dialog>
@@ -307,6 +319,12 @@ function render() {
     </div>`).join('') : '<div class="empty">No cans here yet.</div>';
   $(cur.more).hidden = st.items.length >= st.total;
 }
+function openZoom(c) {
+  const key = c.photo || c.cover; if (!key) return;
+  $('#zoomImg').src = '/img/' + encodeURI(key);
+  $('#zoomDlg').classList.remove('full');
+  if (!$('#zoomDlg').open) $('#zoomDlg').showModal();
+}
 function openCan(id) {
   const c = st.items.find(x => x.id === id); if (!c) return;
   const inList = k => mine[k].has(id);
@@ -323,11 +341,13 @@ function openCan(id) {
       </dl>
       <p>${esc(c.description)}</p>
       <div class="row">
+        ${(c.photo || c.cover) ? '<button class="zbtn" data-zoom title="View larger photo" aria-label="View larger photo"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg></button>' : ''}
         <button data-k="owned" class="${inList('owned') ? 'on' : ''}">${inList('owned') ? 'In my collection' : 'Add to collection'}</button>
         <button data-k="wish" class="${inList('wish') ? 'on' : ''}">${inList('wish') ? 'In wishlist' : 'Add to wishlist'}</button>
       </div>
     </div></div>`;
   $('#dbody').onclick = e => {
+    if (e.target.closest('[data-zoom]')) { openZoom(c); return; }
     const k = e.target.dataset.k; if (!k) return;
     needAuth(async () => {
       const on = !mine[k].has(id);
@@ -471,6 +491,10 @@ const MOON = '<svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1
 const isDark = () => document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
 function applyTheme() { $('#themeBtn').innerHTML = isDark() ? SUN : MOON; $('#themeBtn').title = isDark() ? 'Switch to light theme' : 'Switch to dark theme'; }
 $('#themeBtn').onclick = () => { const t = isDark() ? 'light' : 'dark'; document.documentElement.dataset.theme = t; try { localStorage.setItem('theme', t); } catch {} applyTheme(); };
+
+// ---------- enlarged photo ----------
+$('#zoomImg').onclick = () => $('#zoomDlg').classList.toggle('full');
+$('#zoomDlg').addEventListener('click', e => { if (e.target === $('#zoomDlg')) $('#zoomDlg').close(); });
 
 // ---------- collection (stored in the account) ----------
 async function loadColl() {
