@@ -58,7 +58,21 @@ async function logout(request, env) {
   return json({ ok: true }, 200, { 'Set-Cookie': 'sid=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0' });
 }
 
-async function cans(q, env) {
+async function cans(q, env, request) {
+  const kind = q.get('kind');
+  let u = null;
+  if (kind) {
+    if (!['owned', 'wish'].includes(kind)) return json({ error: 'Invalid data' }, 400);
+    u = await currentUser(request, env);
+    if (!u) return json(NEED_LOGIN, 401);
+  }
+  if (q.get('meta') && kind) {
+    const c = await env.DB.prepare('SELECT c.brand AS brand, COUNT(*) AS n FROM cans c JOIN user_cans uc ON uc.can_id = c.id WHERE uc.user_id = ? AND uc.kind = ? GROUP BY c.brand').bind(u.id, kind).all();
+    const cv = await env.DB.prepare('SELECT brand, k FROM (SELECT c.brand AS brand, COALESCE(c.cover, c.photo) AS k, ROW_NUMBER() OVER (PARTITION BY c.brand ORDER BY c.id DESC) rn FROM cans c JOIN user_cans uc ON uc.can_id = c.id WHERE uc.user_id = ? AND uc.kind = ? AND COALESCE(c.cover, c.photo) IS NOT NULL) WHERE rn <= 9').bind(u.id, kind).all();
+    const have = new Set(c.results.map(r => r.brand)), covers = {};
+    for (const r of cv.results) (covers[r.brand] ||= []).push(r.k);
+    return json({ brands: BRANDS.filter(b => have.has(b)), covers });
+  }
   if (q.get('meta')) {
     const c = await env.DB.prepare('SELECT brand, COUNT(*) n FROM cans GROUP BY brand').all();
     const countries = await env.DB.prepare('SELECT DISTINCT country v FROM cans WHERE country IS NOT NULL ORDER BY 1').all();
@@ -84,9 +98,12 @@ async function cans(q, env) {
   if (q.get('q')) { where.push('(name LIKE ? OR description LIKE ?)'); args.push(`%${q.get('q')}%`, `%${q.get('q')}%`); }
   const w = where.length ? ' WHERE ' + where.join(' AND ') : '';
   const limit = Math.min(Number(q.get('limit')) || 48, 100), offset = Number(q.get('offset')) || 0;
-  const total = await env.DB.prepare('SELECT COUNT(*) n FROM cans' + w).bind(...args).first();
-  const rows = await env.DB.prepare('SELECT c.*, u.nick AS author FROM cans c LEFT JOIN users u ON u.id = c.user_id' + w + ' ORDER BY c.id DESC LIMIT ? OFFSET ?')
-    .bind(...args, limit, offset).all();
+  const join = kind ? ' JOIN user_cans uc ON uc.can_id = c.id AND uc.user_id = ? AND uc.kind = ?' : '';
+  const jargs = kind ? [u.id, kind] : [];
+  const order = q.get('series_id') ? 'c.sort IS NULL, c.sort, c.id DESC' : 'c.id DESC';
+  const total = await env.DB.prepare('SELECT COUNT(*) n FROM cans c' + join + w).bind(...jargs, ...args).first();
+  const rows = await env.DB.prepare('SELECT c.*, u.nick AS author FROM cans c LEFT JOIN users u ON u.id = c.user_id' + join + w + ' ORDER BY ' + order + ' LIMIT ? OFFSET ?')
+    .bind(...jargs, ...args, limit, offset).all();
   return json({ total: total.n, items: rows.results });
 }
 
@@ -137,17 +154,36 @@ async function publish(request, env) {
   return json({ id });
 }
 
-async function seriesList(q, env) {
+async function seriesList(q, env, request) {
   if (q.get('id')) {
     const s = await env.DB.prepare('SELECT id, brand, name FROM series WHERE id = ?').bind(Number(q.get('id'))).first();
     return s ? json(s) : json({ error: 'Folder not found' }, 404);
   }
   const brand = q.get('brand') || '';
-  const rows = await env.DB.prepare('SELECT id, name FROM series WHERE brand = ? ORDER BY name').bind(brand).all();
-  const cv = await env.DB.prepare('SELECT series_id, k FROM (SELECT series_id, COALESCE(cover, photo) AS k, ROW_NUMBER() OVER (PARTITION BY series_id ORDER BY id DESC) rn FROM cans WHERE brand = ? AND series_id IS NOT NULL AND COALESCE(cover, photo) IS NOT NULL) WHERE rn <= 4').bind(brand).all();
-  const by = {};
-  for (const r of cv.results) (by[r.series_id] ||= []).push(r.k);
-  return json({ items: rows.results.map(r => ({ ...r, covers: by[r.id] || [] })) });
+  const kind = q.get('kind');
+  if (kind) {
+    if (!['owned', 'wish'].includes(kind)) return json({ error: 'Invalid data' }, 400);
+    const u = await currentUser(request, env);
+    if (!u) return json(NEED_LOGIN, 401);
+    const mine = await env.DB.prepare('SELECT s.id, s.name, s.sort AS pos FROM series s WHERE s.brand = ? AND EXISTS (SELECT 1 FROM cans c JOIN user_cans uc ON uc.can_id = c.id WHERE c.series_id = s.id AND uc.user_id = ? AND uc.kind = ?) ORDER BY s.sort IS NULL, s.sort, s.name').bind(brand, u.id, kind).all();
+    return json({ items: mine.results });
+  }
+  const rows = await env.DB.prepare('SELECT id, name, sort AS pos FROM series WHERE brand = ? ORDER BY sort IS NULL, sort, name').bind(brand).all();
+  return json({ items: rows.results });
+}
+
+async function orderSet(request, env) {
+  const u = await currentUser(request, env);
+  if (!u) return json(NEED_LOGIN, 401);
+  const { kind, brand, series_id, ids } = await request.json().catch(() => ({}));
+  if (!Array.isArray(ids) || ids.length > 2000 || !ids.every(Number.isInteger)) return json({ error: 'Invalid data' }, 400);
+  let sql, extra;
+  if (kind === 'series' && BRANDS.includes(brand)) { sql = 'UPDATE series SET sort = ? WHERE id = ? AND brand = ?'; extra = brand; }
+  else if (kind === 'cans' && Number.isInteger(series_id)) { sql = 'UPDATE cans SET sort = ? WHERE id = ? AND series_id = ?'; extra = series_id; }
+  else return json({ error: 'Invalid data' }, 400);
+  const stmts = ids.map((id, i) => env.DB.prepare(sql).bind(i, id, extra));
+  for (let i = 0; i < stmts.length; i += 100) await env.DB.batch(stmts.slice(i, i + 100));
+  return json({ ok: true });
 }
 
 async function seriesCreate(request, env) {
@@ -259,11 +295,12 @@ async function handle(request, env) {
       const o = request.headers.get('Origin');
       if (o && o !== url.origin) return json({ error: 'Forbidden' }, 403);
     }
-    if (p === '/api/cans') return m === 'POST' ? publish(request, env) : cans(url.searchParams, env);
+    if (p === '/api/cans') return m === 'POST' ? publish(request, env) : cans(url.searchParams, env, request);
     if (p === '/api/profile') return m === 'POST' ? profileSave(request, env) : profileGet(request, env);
     if (p === '/api/avatar') return m === 'POST' ? avatarSet(request, env) : m === 'DELETE' ? avatarDelete(request, env) : json({ error: 'Method not allowed' }, 405);
     if (p === '/api/collection') return m === 'POST' ? collectionSet(request, env) : collectionGet(request, env);
-    if (p === '/api/series') return m === 'POST' ? seriesCreate(request, env) : seriesList(url.searchParams, env);
+    if (p === '/api/series') return m === 'POST' ? seriesCreate(request, env) : seriesList(url.searchParams, env, request);
+    if (p === '/api/order' && m === 'POST') return orderSet(request, env);
     if (p === '/api/me') { const u = await currentUser(request, env); return json({ nick: u ? u.nick : null }); }
     if (p === '/api/register' && m === 'POST') return register(request, env);
     if (p === '/api/login' && m === 'POST') return login(request, env);
