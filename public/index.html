@@ -27,7 +27,7 @@ button{cursor:pointer}
 :focus-visible{outline:2px solid var(--ac);outline-offset:2px}
 .six{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;padding:8px 16px}
 .filters>*{width:100%}
-#folders,#sFolders{row-gap:18px}
+#folders,#sFolders,#scFolders{row-gap:18px}
 .tile{cursor:pointer}
 .cap{text-align:center;margin-top:8px;font-size:14px}
 .bbox{aspect-ratio:1;border:4px solid #0b0b0b;border-radius:18px;overflow:hidden;position:relative;background:var(--card)}
@@ -60,10 +60,6 @@ dt{color:var(--mut)}dd{margin:0}
 .on{background:var(--ac);color:#fff;border-color:var(--ac)}
 .zbtn{width:43px;height:43px;padding:0;display:grid;place-items:center}
 .zbtn svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
-.zoom-dlg{width:min(96vw,1400px);max-height:96vh;background:var(--bg)}
-.zbox{overflow:auto;max-height:96vh;text-align:center}
-.zbox img{display:block;margin:0 auto;max-width:100%;max-height:92vh;object-fit:contain;cursor:zoom-in}
-.zoom-dlg.full .zbox img{max-width:none;max-height:none;cursor:zoom-out}
 dialog>.close{position:absolute;top:10px;right:10px;margin:0;z-index:2}
 form.stack>h2:first-child,.tabs{padding-right:72px}
 #dbody{padding-top:46px}
@@ -118,6 +114,23 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 .mapbox path.on:hover{fill:#1a3fc0}
 .mapbox .empty{color:#5d6b76}
 @media(max-width:720px){.prof-dlg{height:auto}.prof{grid-template-columns:1fr}.ptop{grid-template-columns:1fr}.pctl{flex-direction:row;flex-wrap:wrap}.vr{display:none}.avatar{width:120px;height:120px}}
+.zoom-dlg{width:min(96vw,1400px);height:min(92vh,1000px);overflow:hidden;background:var(--bg)}
+.zbox{position:relative;width:100%;height:100%;overflow:hidden;touch-action:none;cursor:grab}
+.zbox.drag{cursor:grabbing}
+.zbox img{position:absolute;left:50%;top:50%;max-width:100%;max-height:100%;transform:translate(-50%,-50%);user-select:none;-webkit-user-drag:none}
+.ztools{position:absolute;left:10px;bottom:10px;display:flex;gap:6px;z-index:2}
+.ztools button{min-width:40px;height:40px;padding:0 10px;font-size:20px}
+#ordBtn{background:var(--card);border-color:var(--bd);color:var(--ink)}
+#ordBtn.on{background:var(--ac);border-color:var(--ac);color:#fff}
+#ordBtn:disabled{opacity:.4;cursor:not-allowed}
+.reordering #sFolders .tile,.reordering #sgrid .card{cursor:grab;outline:2px dashed var(--ac);outline-offset:3px}
+.sortable-ghost{opacity:.35}
+.micon{width:64px;height:64px;flex:none;background:currentColor;-webkit-mask:url(/map-icon.png) center/contain no-repeat;mask:url(/map-icon.png) center/contain no-repeat}
+.psplit{display:grid;grid-template-columns:1fr 1fr;padding:0;overflow:hidden}
+.psplit button{border:0;border-radius:0;background:transparent;color:var(--ink);font-size:18px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 20px;cursor:pointer}
+.psplit button+button{border-left:1px solid var(--bd)}
+.psplit button:hover{background:color-mix(in srgb,var(--ink) 8%,transparent)}
+.psplit .arr{font-size:26px}
 [hidden]{display:none!important}
 #sFolders,#sgrid{grid-template-columns:repeat(9,minmax(0,1fr))}
 #sFolders .cap{font-size:13px}
@@ -141,6 +154,9 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
     <svg viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18z"/></svg>
   </button>
   <button class="primary" id="pubBtn">Publish cans</button>
+  <button class="sq" id="ordBtn" title="Reorder folders and cans (drag and drop)" aria-label="Reorder" disabled>
+    <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>
+  </button>
   <button class="sq" style="margin-left:auto" id="themeBtn" aria-label="Toggle light or dark theme"></button>
 </div>
 
@@ -166,8 +182,13 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 </section>
 
 <section id="brandPage" hidden>
-  <div class="bar"><a class="link" href="#">← All brands</a><h2 id="bTitle"></h2></div>
+  <div class="bar"><a class="link" id="bBack" href="#">← All brands</a><h2 id="bTitle"></h2></div>
   <div class="six" id="sFolders"></div>
+</section>
+
+<section id="scopePage" hidden>
+  <div class="bar"><a class="link" href="#">← Back</a><h2 id="scTitle"></h2></div>
+  <div class="six" id="scFolders"></div>
 </section>
 
 <section id="seriesPage" hidden>
@@ -208,17 +229,21 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
     <div class="pcard"><h3>Brand count:</h3><div class="pbrands" id="pBrands"></div></div>
     <div class="pright">
       <button type="button" class="pcard plink" id="openMap">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/></svg>
+        <span class="micon"></span>
         <span>Open map<br>of available cans</span><span class="arr">›</span>
       </button>
-      <div class="pcard pblank"></div>
+      <div class="pcard psplit">
+        <button type="button" id="openOwned"><span>My collection</span><span class="arr">›</span></button>
+        <button type="button" id="openWish"><span>Wishlist</span><span class="arr">›</span></button>
+      </div>
     </div>
   </div>
 </dialog>
 
 <dialog id="zoomDlg" class="zoom-dlg">
   <button class="close" data-close>Close</button>
-  <div class="zbox"><img id="zoomImg" alt="Can photo"></div>
+  <div class="zbox" id="zoomBox"><img id="zoomImg" alt="Can photo" draggable="false"></div>
+  <div class="ztools"><button type="button" id="zOut" aria-label="Zoom out">−</button><button type="button" id="zIn" aria-label="Zoom in">+</button><button type="button" id="zFit" aria-label="Fit to window">Fit</button></div>
 </dialog>
 
 <dialog id="dlg"><button class="close" data-close>Close</button><div id="dbody"></div></dialog>
@@ -283,11 +308,12 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const img = k => k ? `style="background-image:url('/img/${encodeURI(k)}')"` : '';
 const opts = (list, first, fmt = v => v) => (first ? `<option value="">${first}</option>` : '') + list.map(v => `<option value="${esc(v)}">${esc(fmt(v))}</option>`).join('');
 const bg = k => `style="background-image:url('/img/${encodeURI(k)}')"`;
-const brandTile = b => `<div class="tile" tabindex="0" data-b="${esc(b)}"><div class="bbox"><div class="mos">${(meta.covers?.[b] || []).map(k => `<i ${bg(k)}></i>`).join('')}</div><img class="badge" src="/folder-badge.png" alt=""></div><div class="cap">${esc(b)}</div></div>`;
+const brandTile = (b, covers = meta.covers) => `<div class="tile" tabindex="0" data-b="${esc(b)}"><div class="bbox"><div class="mos">${(covers?.[b] || []).map(k => `<i ${bg(k)}></i>`).join('')}</div><img class="badge" src="/folder-badge.png" alt=""></div><div class="cap">${esc(b)}</div></div>`;
 const FICON = '<svg class="fico" viewBox="0 0 1335 1180" aria-hidden="true"><path d="M85 190Q85 50 190 50H440Q510 50 560 100L600 140Q640 180 700 180H1190Q1255 180 1255 245V420H85Z" fill="#348bee"/><rect x="163" y="228" width="1008" height="300" rx="45" fill="#f2f2f7"/><rect x="75" y="322" width="1185" height="765" rx="90" fill="#3d99fb"/></svg>';
 const seriesTile = s => `<div class="tile" tabindex="0" data-s="${s.id}">${FICON}<div class="cap">${esc(s.name)}</div></div>`;
 const coll = new Intl.Collator(['ru', 'en'], {numeric: true, sensitivity: 'base'});
 const byName = a => [...a].sort((x, y) => coll.compare(x.name, y.name));
+const bySeries = a => [...a].sort((x, y) => ((x.pos == null) - (y.pos == null)) || ((x.pos ?? 0) - (y.pos ?? 0)) || coll.compare(x.name, y.name));
 const counters = () => { $('#nOwned').textContent = mine.owned.size; $('#nWish').textContent = mine.wish.size; };
 
 async function api(path, opt = {}) {
@@ -309,7 +335,7 @@ async function loadMeta() {
   $('#countries').innerHTML = meta.countries.map(v => `<option value="${esc(v)}">`).join('');
   $('#pBrand').innerHTML = opts(meta.brands, 'Select a brand');
   $('#sBrand').innerHTML = opts(meta.brands, 'Select a brand');
-  $('#folders').innerHTML = meta.brands.map(brandTile).join('');
+  $('#folders').innerHTML = meta.brands.map(b => brandTile(b)).join('');
 }
 
 // ---------- банки ----------
@@ -336,7 +362,7 @@ function render() {
 function openZoom(c) {
   const key = c.photo || c.cover; if (!key) return;
   $('#zoomImg').src = '/img/' + encodeURI(key);
-  $('#zoomDlg').classList.remove('full');
+  zReset();
   if (!$('#zoomDlg').open) $('#zoomDlg').showModal();
 }
 function openCan(id) {
@@ -375,7 +401,7 @@ function openCan(id) {
 }
 
 // ---------- страницы ----------
-const show = id => ['home', 'brandPage', 'seriesPage', 'mapPage'].forEach(s => $('#' + s).hidden = s !== id);
+const show = id => ['home', 'brandPage', 'seriesPage', 'mapPage', 'scopePage'].forEach(s => $('#' + s).hidden = s !== id);
 function filterParams() {
   const p = new URLSearchParams();
   for (const k of ['q', 'brand', 'country', 'volume', 'year', 'shape']) { const v = $('#' + k).value.trim(); if (v) p.set(k, v); }
@@ -387,28 +413,52 @@ function showHome() {
   $('#folders').hidden = searching; $('#results').hidden = !searching;
   if (searching) loadList(p, {grid: '#grid', more: '#more', found: '#found'}, false);
 }
+let scope = null, currentBrand = null, currentSeries = null;
+const pre = () => scope ? scope + '/' : '';
 async function showBrand(brand) {
+  currentBrand = brand;
   show('brandPage'); $('#bTitle').textContent = brand; $('#sFolders').innerHTML = '';
+  $('#bBack').href = '#' + (scope || ''); $('#bBack').textContent = scope ? '← Back' : '← All brands';
+  if (scope && !me) { $('#sFolders').innerHTML = '<div class="empty">Log in to see this page.</div>'; return; }
   try {
-    const d = await api('/api/series?brand=' + encodeURIComponent(brand));
+    const d = await api('/api/series?brand=' + encodeURIComponent(brand) + (scope ? '&kind=' + scope : ''));
     $('#sFolders').innerHTML = d.items.length
-      ? byName(d.items).map(seriesTile).join('')
-      : '<div class="empty">This brand has no flavor/series folders yet. Create the first one with the folder button.</div>';
+      ? bySeries(d.items).map(seriesTile).join('')
+      : scope ? '<div class="empty">Nothing here yet.</div>'
+        : '<div class="empty">This brand has no flavor/series folders yet. Create the first one with the folder button.</div>';
   } catch (e) { $('#sFolders').innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
 async function showSeries(id) {
+  currentSeries = id;
   show('seriesPage'); $('#sTitle').textContent = ''; $('#sgrid').innerHTML = '';
+  if (scope && !me) { $('#sgrid').innerHTML = '<div class="empty">Log in to see this page.</div>'; return; }
   try {
     const s = await api('/api/series?id=' + id);
     $('#sTitle').textContent = s.brand + ' / ' + s.name;
-    $('#sBack').href = '#b/' + encodeURIComponent(s.brand);
-    loadList(new URLSearchParams({series_id: id}), {grid: '#sgrid', more: '#smore'}, false);
+    $('#sBack').href = '#' + pre() + 'b/' + encodeURIComponent(s.brand);
+    const base = new URLSearchParams({series_id: id}); if (scope) base.set('kind', scope);
+    loadList(base, {grid: '#sgrid', more: '#smore'}, false);
   } catch (e) { $('#sgrid').innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
+async function showScope() {
+  show('scopePage'); $('#scTitle').textContent = scope === 'owned' ? 'My collection' : 'Wishlist';
+  const box = $('#scFolders'); box.innerHTML = '';
+  if (!me) { box.innerHTML = '<div class="empty">Log in to see this page.</div>'; return; }
+  try {
+    const d = await api('/api/cans?meta=1&kind=' + scope);
+    box.innerHTML = d.brands.length ? d.brands.map(b => brandTile(b, d.covers)).join('')
+      : `<div class="empty">Nothing here yet. Open a can in the archive and add it to your ${scope === 'owned' ? 'collection' : 'wishlist'}.</div>`;
+  } catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
 function route() {
-  const [t, v] = location.hash.slice(1).split('/');
+  const parts = location.hash.slice(1).split('/');
+  scope = ['owned', 'wish'].includes(parts[0]) ? parts.shift() : null;
+  const [t, v] = parts;
+  if (reorder) setReorder(false);
+  $('#ordBtn').disabled = !(t === 'b' || t === 's') || !!scope;
   if (t === 'b' && v) showBrand(decodeURIComponent(v));
   else if (t === 's' && v) showSeries(+v);
+  else if (scope) showScope();
   else if (t === 'map') showMap();
   else showHome();
   window.scrollTo(0, 0);
@@ -440,7 +490,7 @@ $('#authForm').onsubmit = async e => {
       body: JSON.stringify({nick: $('#aNick').value.trim(), password: $('#aPass').value})});
     me = r.nick; updateAuth(); await loadColl(); $('#authForm').reset(); $('#authDlg').close();
     const a = afterAuth; afterAuth = null; if (a) a();
-    if (location.hash === '#map') route();
+    if (/^#(map|owned|wish)/.test(location.hash)) route();
   } catch (err) { $('#aErr').textContent = err.message; }
 };
 $('#authDlg').addEventListener('close', () => { afterAuth = null; });
@@ -463,7 +513,7 @@ $('#pBrand').onchange = async () => {
   const b = $('#pBrand').value; $('#pSerWrap').hidden = !b; if (!b) return;
   try {
     const d = await api('/api/series?brand=' + encodeURIComponent(b));
-    $('#pSeries').innerHTML = byName(d.items).map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+    $('#pSeries').innerHTML = bySeries(d.items).map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
     $('#pHint').textContent = d.items.length ? '' : 'This brand has no folders yet. Create one first with the folder button.';
   } catch (e) { $('#pHint').textContent = e.message; }
 };
@@ -484,13 +534,14 @@ $('#pubForm').onsubmit = async e => {
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
 const clickFolder = e => {
   const f = e.target.closest('.tile'); if (!f) return;
-  location.hash = f.dataset.b ? 'b/' + encodeURIComponent(f.dataset.b) : 's/' + f.dataset.s;
+  if (reorder) return;
+  location.hash = pre() + (f.dataset.b ? 'b/' + encodeURIComponent(f.dataset.b) : 's/' + f.dataset.s);
 };
-for (const id of ['#folders', '#sFolders']) {
+for (const id of ['#folders', '#sFolders', '#scFolders']) {
   $(id).addEventListener('click', clickFolder);
   $(id).addEventListener('keydown', e => { if (e.key === 'Enter') clickFolder(e); });
 }
-const clickCard = e => { const c = e.target.closest('.card'); if (c) openCan(+c.dataset.id); };
+const clickCard = e => { const c = e.target.closest('.card'); if (c && !reorder) openCan(+c.dataset.id); };
 for (const id of ['#grid', '#sgrid']) {
   $(id).addEventListener('click', clickCard);
   $(id).addEventListener('keydown', e => { if (e.key === 'Enter') clickCard(e); });
@@ -506,6 +557,32 @@ const isDark = () => document.documentElement.dataset.theme ? document.documentE
 function applyTheme() { $('#themeBtn').innerHTML = isDark() ? SUN : MOON; $('#themeBtn').title = isDark() ? 'Switch to light theme' : 'Switch to dark theme'; }
 $('#themeBtn').onclick = () => { const t = isDark() ? 'light' : 'dark'; document.documentElement.dataset.theme = t; try { localStorage.setItem('theme', t); } catch {} applyTheme(); };
 
+// ---------- manual order of folders and cans (drag and drop, SortableJS from the jsDelivr CDN) ----------
+let reorder = false, sortable = null;
+const ORDER_LIB = 'https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js';
+const ordTarget = () => !$('#brandPage').hidden ? {el: '#sFolders', kind: 'series'} : !$('#seriesPage').hidden ? {el: '#sgrid', kind: 'cans'} : null;
+async function setReorder(on) {
+  reorder = on; $('#ordBtn').classList.toggle('on', on); document.body.classList.toggle('reordering', on);
+  if (sortable) { sortable.destroy(); sortable = null; }
+  const t = ordTarget(); if (!on || !t) return;
+  try {
+    if (!window.Sortable) await loadScript(ORDER_LIB);
+    if (t.kind === 'cans') { let n = -1; while (st.items.length < st.total && st.items.length !== n) { n = st.items.length; await loadList(cur.base, cur, true); } }
+    if (!reorder) return;
+    sortable = Sortable.create($(t.el), {animation: 150, draggable: t.kind === 'series' ? '.tile' : '.card', onEnd: saveOrder});
+  } catch (e) { alert(e.message); reorder = false; $('#ordBtn').classList.remove('on'); document.body.classList.remove('reordering'); }
+}
+async function saveOrder() {
+  const t = ordTarget(); if (!t) return;
+  const ids = [...$(t.el).children].map(el => +(el.dataset.s || el.dataset.id)).filter(Number.isInteger);
+  try {
+    await api('/api/order', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(t.kind === 'series' ? {kind: 'series', brand: currentBrand, ids} : {kind: 'cans', series_id: currentSeries, ids})});
+    if (t.kind === 'cans') st.items.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+  } catch (e) { alert(e.message); }
+}
+$('#ordBtn').onclick = () => needAuth(() => setReorder(!reorder));
+
 // ---------- number fields with custom arrows ----------
 const SPIN = '<span class="spin"><button type="button" class="up" tabindex="-1" aria-label="Increase"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button><button type="button" class="dn" tabindex="-1" aria-label="Decrease"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></span>';
 document.querySelectorAll('.num').forEach(n => {
@@ -520,7 +597,42 @@ document.querySelectorAll('.num').forEach(n => {
 });
 
 // ---------- enlarged photo ----------
-$('#zoomImg').onclick = () => $('#zoomDlg').classList.toggle('full');
+const Z = {s: 1, x: 0, y: 0, ptr: new Map(), d0: 1, s0: 1};
+function zApply() {
+  const box = $('#zoomBox'), img = $('#zoomImg');
+  const mx = Math.max(0, (img.offsetWidth * Z.s - box.clientWidth) / 2), my = Math.max(0, (img.offsetHeight * Z.s - box.clientHeight) / 2);
+  Z.x = Math.min(mx, Math.max(-mx, Z.x)); Z.y = Math.min(my, Math.max(-my, Z.y));
+  img.style.transform = `translate(-50%, -50%) translate(${Z.x}px, ${Z.y}px) scale(${Z.s})`;
+}
+function zReset() { Z.s = 1; Z.x = 0; Z.y = 0; Z.ptr.clear(); zApply(); }
+function zAt(px, py, s2) {
+  s2 = Math.min(10, Math.max(1, s2));
+  Z.x = px - (px - Z.x) * s2 / Z.s; Z.y = py - (py - Z.y) * s2 / Z.s; Z.s = s2;
+  if (s2 === 1) { Z.x = 0; Z.y = 0; }
+  zApply();
+}
+const zPos = e => { const r = $('#zoomBox').getBoundingClientRect(); return [e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2]; };
+$('#zoomBox').addEventListener('wheel', e => { e.preventDefault(); const [px, py] = zPos(e); zAt(px, py, Z.s * (e.deltaY < 0 ? 1.25 : 0.8)); }, {passive: false});
+$('#zoomBox').addEventListener('dblclick', e => { const [px, py] = zPos(e); zAt(px, py, Z.s > 1.01 ? 1 : 3); });
+$('#zoomBox').addEventListener('pointerdown', e => {
+  $('#zoomBox').setPointerCapture(e.pointerId); Z.ptr.set(e.pointerId, {x: e.clientX, y: e.clientY});
+  if (Z.ptr.size === 2) { const [a, b] = [...Z.ptr.values()]; Z.d0 = Math.hypot(a.x - b.x, a.y - b.y) || 1; Z.s0 = Z.s; }
+  $('#zoomBox').classList.add('drag');
+});
+$('#zoomBox').addEventListener('pointermove', e => {
+  const p = Z.ptr.get(e.pointerId); if (!p) return;
+  const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (Z.ptr.size === 1) { Z.x += dx; Z.y += dy; zApply(); }
+  else if (Z.ptr.size === 2) {
+    const [a, b] = [...Z.ptr.values()], r = $('#zoomBox').getBoundingClientRect();
+    zAt((a.x + b.x) / 2 - r.left - r.width / 2, (a.y + b.y) / 2 - r.top - r.height / 2, Z.s0 * Math.hypot(a.x - b.x, a.y - b.y) / Z.d0);
+  }
+});
+const zEnd = e => { Z.ptr.delete(e.pointerId); if (!Z.ptr.size) $('#zoomBox').classList.remove('drag'); };
+$('#zoomBox').addEventListener('pointerup', zEnd); $('#zoomBox').addEventListener('pointercancel', zEnd);
+$('#zIn').onclick = () => zAt(0, 0, Z.s * 1.5);
+$('#zOut').onclick = () => zAt(0, 0, Z.s / 1.5);
+$('#zFit').onclick = zReset;
 $('#zoomDlg').addEventListener('click', e => { if (e.target === $('#zoomDlg')) $('#zoomDlg').close(); });
 
 // ---------- collection (stored in the account) ----------
@@ -591,13 +703,15 @@ $('#saveBtn').onclick = async () => {
 };
 $('#profDlg').addEventListener('close', () => { if (edit) setEdit(false); });
 $('#openMap').onclick = () => { $('#profDlg').close(); location.hash = 'map'; };
+$('#openOwned').onclick = () => { $('#profDlg').close(); location.hash = 'owned'; };
+$('#openWish').onclick = () => { $('#profDlg').close(); location.hash = 'wish'; };
 
 // ---------- countries map (libraries and map data load from the jsDelivr CDN) ----------
 const LIBS = ['https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js', 'https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js'];
 const ATLAS = 'https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-50m.json';
 const loadScript = src => new Promise((ok, no) => {
   const el = document.createElement('script'); el.src = src; el.onload = ok;
-  el.onerror = () => no(new Error('Could not load the map library. Check your connection and reload.'));
+  el.onerror = () => no(new Error('Could not load a required library. Check your connection and reload.'));
   document.head.appendChild(el);
 });
 let saveTimer;
