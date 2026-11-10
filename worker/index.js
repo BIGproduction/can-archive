@@ -73,6 +73,11 @@ async function cans(q, env, request) {
     for (const r of cv.results) (covers[r.brand] ||= []).push(r.k);
     return json({ brands: BRANDS.filter(b => have.has(b)), covers });
   }
+  if (q.get('meta') && q.get('brand')) {
+    const b = q.get('brand');
+    const col = async (c, order) => (await env.DB.prepare(`SELECT DISTINCT ${c} AS v FROM cans WHERE brand = ? AND ${c} IS NOT NULL ORDER BY ${order}`).bind(b).all()).results.map(r => r.v);
+    return json({ countries: await col('country', '1'), volumes: await col('volume', '1'), years: await col('year', '1 DESC'), shapes: await col('shape', '1') });
+  }
   if (q.get('meta')) {
     const c = await env.DB.prepare('SELECT brand, COUNT(*) n FROM cans GROUP BY brand').all();
     const countries = await env.DB.prepare('SELECT DISTINCT country v FROM cans WHERE country IS NOT NULL ORDER BY 1').all();
