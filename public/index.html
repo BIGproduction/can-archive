@@ -63,6 +63,9 @@ dt{color:var(--mut)}dd{margin:0}
 dialog>.close{position:absolute;top:10px;right:10px;margin:0;z-index:2}
 form.stack>h2:first-child,.tabs{padding-right:72px}
 #dbody{padding-top:46px}
+#dbody .dlg>div:last-child{padding-right:56px}
+.editcan{position:absolute;top:54px;right:10px;width:40px;height:40px;padding:0;display:grid;place-items:center;z-index:2}
+.editcan svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 form.stack{display:grid;gap:10px;padding:16px}
 form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 .err{color:#d6336c;font-size:14px;min-height:20px}
@@ -288,7 +291,7 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 <dialog id="pubDlg" class="sm">
   <button class="close" data-close>Close</button>
   <form class="stack" id="pubForm">
-    <h2 style="margin:0">Publish a can</h2>
+    <h2 style="margin:0" id="pubTitle">Publish a can</h2>
     <label>Brand<select name="brand" id="pBrand" required></select></label>
     <label id="pSerWrap" hidden>Flavor / series<select name="series_id" id="pSeries" required></select>
       <span class="hint" id="pHint"></span></label>
@@ -299,7 +302,8 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
     <label>Shape<select name="shape" required>
       <option value="slim">Slim</option><option value="wide">Wide</option></select></label>
     <label>Description<textarea name="description" rows="3" maxlength="2000"></textarea></label>
-    <label>Photo (collage)<input name="photo" type="file" accept="image/jpeg,image/png,image/webp" required></label>
+    <div class="hint" id="pEditHint" hidden>Photos are optional when editing: leave a field empty to keep the current photo.</div>
+    <label>Photo (collage)<input name="photo" id="pPhoto" type="file" accept="image/jpeg,image/png,image/webp" required></label>
     <label>Catalog cover (optional)<input name="cover" type="file" accept="image/jpeg,image/png,image/webp"></label>
     <div class="err" id="pErr"></div>
     <button class="primary" id="pSubmit">Publish</button>
@@ -380,7 +384,7 @@ function openZoom(c) {
 function openCan(id) {
   const c = st.items.find(x => x.id === id); if (!c) return;
   const inList = k => mine[k].has(id);
-  $('#dbody').innerHTML = `<div class="dlg">
+  $('#dbody').innerHTML = `<button class="editcan" data-edit title="Edit can" aria-label="Edit can"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg></button><div class="dlg">
     <div class="ph" ${img(c.photo || c.cover)}></div>
     <div>
       <h2 style="margin:0">${esc(c.brand)}</h2><div>${esc(c.name)}</div>
@@ -399,6 +403,7 @@ function openCan(id) {
       </div>
     </div></div>`;
   $('#dbody').onclick = e => {
+    if (e.target.closest('[data-edit]')) { needAuth(() => openEdit(c)); return; }
     if (e.target.closest('[data-zoom]')) { openZoom(c); return; }
     const k = e.target.dataset.k; if (!k) return;
     needAuth(async () => {
@@ -547,23 +552,45 @@ $('#serForm').onsubmit = async e => {
 
 // ---------- публикация ----------
 $('#pubBtn').onclick = () => needAuth(() => { $('#pErr').textContent = ''; $('#pSerWrap').hidden = true; $('#pubDlg').showModal(); });
-$('#pBrand').onchange = async () => {
-  const b = $('#pBrand').value; $('#pSerWrap').hidden = !b; if (!b) return;
+let editId = null;
+async function loadSeriesOpts(b, selected) {
   try {
     const d = await api('/api/series?brand=' + encodeURIComponent(b));
     $('#pSeries').innerHTML = bySeries(d.items).map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
     $('#pHint').textContent = d.items.length ? '' : 'This brand has no folders yet. Create one first with the folder button.';
+    if (selected) $('#pSeries').value = String(selected);
   } catch (e) { $('#pHint').textContent = e.message; }
+}
+$('#pBrand').onchange = () => {
+  const b = $('#pBrand').value; $('#pSerWrap').hidden = !b;
+  if (b) loadSeriesOpts(b);
 };
+// редактирование банки: то же окно, что и при публикации, но с уже заполненными полями
+async function openEdit(c) {
+  const f = $('#pubForm'); f.reset(); $('#pErr').textContent = ''; editId = c.id;
+  $('#pubTitle').textContent = 'Edit can'; $('#pSubmit').textContent = 'Save';
+  $('#pEditHint').hidden = false; $('#pPhoto').required = false;
+  $('#pBrand').value = c.brand; $('#pSerWrap').hidden = false;
+  await loadSeriesOpts(c.brand, c.series_id);
+  for (const k of ['name', 'country', 'volume', 'year', 'shape', 'description']) f.elements.namedItem(k).value = c[k] ?? '';
+  $('#dlg').close(); $('#pubDlg').showModal();
+}
+$('#pubDlg').addEventListener('close', () => {
+  editId = null; $('#pubForm').reset(); $('#pSerWrap').hidden = true;
+  $('#pubTitle').textContent = 'Publish a can'; $('#pSubmit').textContent = 'Publish';
+  $('#pEditHint').hidden = true; $('#pPhoto').required = true;
+});
 $('#pubForm').onsubmit = async e => {
   e.preventDefault();
   const btn = $('#pSubmit'); btn.disabled = true; $('#pErr').textContent = 'Uploading…';
-  const fd = new FormData($('#pubForm')), sid = fd.get('series_id');
+  const fd = new FormData($('#pubForm')), sid = fd.get('series_id'), editing = editId;
+  if (editing) fd.append('id', editing);
   try {
-    await api('/api/cans', {method: 'POST', body: fd});
-    $('#pubForm').reset(); $('#pSerWrap').hidden = true; $('#pubDlg').close();
+    await api(editing ? '/api/can-edit' : '/api/cans', {method: 'POST', body: fd});
+    $('#pubDlg').close();
     await loadMeta();
-    if (location.hash === '#s/' + sid) route(); else location.hash = 's/' + sid;
+    if (editing) route();
+    else if (location.hash === '#s/' + sid) route(); else location.hash = 's/' + sid;
   } catch (err) { $('#pErr').textContent = err.message; }
   btn.disabled = false;
 };
