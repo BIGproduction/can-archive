@@ -132,11 +132,11 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 .psplit button:hover{background:color-mix(in srgb,var(--ink) 8%,transparent)}
 .psplit .arr{font-size:26px}
 [hidden]{display:none!important}
-#sFolders,#sgrid{grid-template-columns:repeat(9,minmax(0,1fr))}
+#sFolders,#sgrid,#grid,#bgrid{grid-template-columns:repeat(9,minmax(0,1fr))}
 #sFolders .cap{font-size:13px}
-#sgrid .card p{font-size:12px;padding:6px 8px}
-@media(max-width:1100px){#sFolders,#sgrid{grid-template-columns:repeat(6,minmax(0,1fr))}}
-@media(max-width:720px){#sFolders,#sgrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+#sgrid .card p,#grid .card p,#bgrid .card p{font-size:12px;padding:6px 8px}
+@media(max-width:1100px){#sFolders,#sgrid,#grid,#bgrid{grid-template-columns:repeat(6,minmax(0,1fr))}}
+@media(max-width:720px){#sFolders,#sgrid,#grid,#bgrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:720px){.six{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 <script>(function(){try{var x=localStorage.getItem("theme");if(x)document.documentElement.dataset.theme=x}catch(e){}})()</script>
@@ -183,7 +183,19 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 
 <section id="brandPage" hidden>
   <div class="bar"><a class="link" id="bBack" href="#">← All brands</a><h2 id="bTitle"></h2></div>
+  <form class="six filters" id="bf" onsubmit="return false">
+    <input id="bq" type="search" placeholder="Search by name">
+    <select id="bcountry"><option value="">Countries</option></select>
+    <select id="bvolume"><option value="">Volume</option></select>
+    <select id="byear"><option value="">Year</option></select>
+    <select id="bshape"><option value="">Shape</option></select>
+  </form>
   <div class="six" id="sFolders"></div>
+  <div id="bresults" hidden>
+    <div class="bar"><span class="stat">Found: <span id="bfound">0</span></span></div>
+    <div class="six grid" id="bgrid"></div>
+    <button class="more" id="bmore" hidden>Show more</button>
+  </div>
 </section>
 
 <section id="scopePage" hidden>
@@ -419,7 +431,9 @@ async function showBrand(brand) {
   currentBrand = brand;
   show('brandPage'); $('#bTitle').textContent = brand; $('#sFolders').innerHTML = '';
   $('#bBack').href = '#' + (scope || ''); $('#bBack').textContent = scope ? '← Back' : '← All brands';
+  $('#bf').hidden = !!scope; $('#bf').reset(); $('#bresults').hidden = true; $('#sFolders').hidden = false;
   if (scope && !me) { $('#sFolders').innerHTML = '<div class="empty">Log in to see this page.</div>'; return; }
+  if (!scope) loadBrandFilters(brand);
   try {
     const d = await api('/api/series?brand=' + encodeURIComponent(brand) + (scope ? '&kind=' + scope : ''));
     $('#sFolders').innerHTML = d.items.length
@@ -428,6 +442,30 @@ async function showBrand(brand) {
         : '<div class="empty">This brand has no flavor/series folders yet. Create the first one with the folder button.</div>';
   } catch (e) { $('#sFolders').innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
+// фильтры внутри бренда: в списках только то, что есть у этого бренда
+async function loadBrandFilters(brand) {
+  try {
+    const m = await api('/api/cans?meta=1&brand=' + encodeURIComponent(brand));
+    if (currentBrand !== brand) return;
+    $('#bcountry').innerHTML = opts(m.countries, 'Countries');
+    $('#bvolume').innerHTML = opts(m.volumes, 'Volume', v => v + ' ml');
+    $('#byear').innerHTML = opts(m.years, 'Year');
+    $('#bshape').innerHTML = '<option value="">Shape</option>' + ['slim', 'wide'].filter(x => m.shapes.includes(x)).map(x => `<option value="${x}">${SHAPE[x]}</option>`).join('');
+  } catch {}
+}
+function brandSearch() {
+  const p = new URLSearchParams();
+  for (const [k, id] of [['q', 'bq'], ['country', 'bcountry'], ['volume', 'bvolume'], ['year', 'byear'], ['shape', 'bshape']]) {
+    const v = $('#' + id).value.trim(); if (v) p.set(k, v);
+  }
+  const searching = p.toString() !== '';
+  $('#sFolders').hidden = searching; $('#bresults').hidden = !searching;
+  if (!searching) return;
+  p.set('brand', currentBrand);
+  loadList(p, {grid: '#bgrid', more: '#bmore', found: '#bfound'}, false);
+}
+let bTimer;
+$('#bf').addEventListener('input', () => { clearTimeout(bTimer); bTimer = setTimeout(brandSearch, 250); });
 async function showSeries(id) {
   currentSeries = id;
   show('seriesPage'); $('#sTitle').textContent = ''; $('#sgrid').innerHTML = '';
@@ -542,7 +580,7 @@ for (const id of ['#folders', '#sFolders', '#scFolders']) {
   $(id).addEventListener('keydown', e => { if (e.key === 'Enter') clickFolder(e); });
 }
 const clickCard = e => { const c = e.target.closest('.card'); if (c && !reorder) openCan(+c.dataset.id); };
-for (const id of ['#grid', '#sgrid']) {
+for (const id of ['#grid', '#sgrid', '#bgrid']) {
   $(id).addEventListener('click', clickCard);
   $(id).addEventListener('keydown', e => { if (e.key === 'Enter') clickCard(e); });
 }
