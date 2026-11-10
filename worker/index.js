@@ -287,6 +287,55 @@ async function collectionSet(request, env) {
   return json({ ok: true });
 }
 
+async function editCan(request, env) {
+  const user = await currentUser(request, env);
+  if (!user) return json(NEED_LOGIN, 401);
+  if (!env.PHOTOS) return json({ error: 'Photo storage is not connected' }, 501);
+  const f = await request.formData().catch(() => null);
+  if (!f) return json({ error: 'Invalid data' }, 400);
+  const id = Number(f.get('id'));
+  const old = Number.isInteger(id) ? await env.DB.prepare('SELECT * FROM cans WHERE id = ?').bind(id).first() : null;
+  if (!old) return json({ error: 'Can not found' }, 404);
+
+  const brand = f.get('brand'), shape = f.get('shape');
+  const name = String(f.get('name') || '').trim(), country = String(f.get('country') || '').trim();
+  const description = String(f.get('description') || '').trim();
+  const volume = Number(f.get('volume')), year = Number(f.get('year')), seriesId = Number(f.get('series_id'));
+  const photo = f.get('photo'), cover = f.get('cover');
+  const newPhoto = !!photo && typeof photo === 'object' && photo.size > 0;
+  const newCover = !!cover && typeof cover === 'object' && cover.size > 0;
+
+  if (!BRANDS.includes(brand)) return json({ error: 'Select a brand' }, 400);
+  const ser = await env.DB.prepare('SELECT id FROM series WHERE id = ? AND brand = ?').bind(seriesId, brand).first();
+  if (!ser) return json({ error: 'Select a flavor/series folder' }, 400);
+  if (!name || name.length > 120) return json({ error: 'Enter a name (up to 120 characters)' }, 400);
+  if (!country || country.length > 60) return json({ error: 'Enter a country' }, 400);
+  if (!Number.isInteger(volume) || volume < 1 || volume > 5000) return json({ error: 'Volume: a number from 1 to 5000 ml' }, 400);
+  if (!Number.isInteger(year) || year < 1900 || year > 2100) return json({ error: 'Enter a year' }, 400);
+  if (!['slim', 'wide'].includes(shape)) return json({ error: 'Select a can shape' }, 400);
+  if (description.length > 2000) return json({ error: 'Description is too long' }, 400);
+  const okFile = x => TYPES[x.type] && x.size <= MAX_FILE;
+  if (newPhoto && !okFile(photo)) return json({ error: 'Photo: JPG, PNG or WebP, up to 8 MB' }, 400);
+  if (newCover && !okFile(cover)) return json({ error: 'Cover: JPG, PNG or WebP, up to 8 MB' }, 400);
+
+  // новые ключи с отметкой времени: старые адреса кэшируются браузером на год
+  const stamp = Date.now();
+  const photoKey = newPhoto ? `cans/${id}-${stamp}.${TYPES[photo.type]}` : old.photo;
+  let coverKey = old.cover;
+  if (newCover) coverKey = `cans/${id}-cover-${stamp}.${TYPES[cover.type]}`;
+  else if (newPhoto && old.cover === old.photo) coverKey = photoKey;
+  try {
+    if (newPhoto) await env.PHOTOS.put(photoKey, photo.stream(), { httpMetadata: { contentType: photo.type } });
+    if (newCover) await env.PHOTOS.put(coverKey, cover.stream(), { httpMetadata: { contentType: cover.type } });
+  } catch {
+    return json({ error: 'Could not save the photo, please try again' }, 500);
+  }
+  await env.DB.prepare('UPDATE cans SET name = ?, brand = ?, country = ?, volume = ?, year = ?, shape = ?, description = ?, series_id = ?, photo = ?, cover = ?, sort = ? WHERE id = ?')
+    .bind(name, brand, country, volume, year, shape, description, seriesId, photoKey, coverKey, old.series_id === seriesId ? old.sort : null, id).run();
+  for (const k of new Set([old.photo, old.cover])) if (k && k !== photoKey && k !== coverKey) await env.PHOTOS.delete(k);
+  return json({ ok: true });
+}
+
 async function image(env, key) {
   if (!key || key.includes('..')) return new Response('Bad request', { status: 400 });
   const o = await env.PHOTOS.get(key);
@@ -304,6 +353,7 @@ async function handle(request, env) {
     if (p === '/api/profile') return m === 'POST' ? profileSave(request, env) : profileGet(request, env);
     if (p === '/api/avatar') return m === 'POST' ? avatarSet(request, env) : m === 'DELETE' ? avatarDelete(request, env) : json({ error: 'Method not allowed' }, 405);
     if (p === '/api/collection') return m === 'POST' ? collectionSet(request, env) : collectionGet(request, env);
+    if (p === '/api/can-edit' && m === 'POST') return editCan(request, env);
     if (p === '/api/series') return m === 'POST' ? seriesCreate(request, env) : seriesList(url.searchParams, env, request);
     if (p === '/api/order' && m === 'POST') return orderSet(request, env);
     if (p === '/api/me') { const u = await currentUser(request, env); return json({ nick: u ? u.nick : null }); }
