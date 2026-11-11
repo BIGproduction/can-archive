@@ -153,11 +153,11 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 </header>
 
 <div class="pubbar">
-  <button class="sq" id="serBtn" title="Create flavor/series folder" aria-label="Create a flavor or series folder">
+  <button class="sq" id="serBtn" hidden title="Create flavor/series folder" aria-label="Create a flavor or series folder">
     <svg viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18z"/></svg>
   </button>
   <button class="primary" id="pubBtn">Publish cans</button>
-  <button class="sq" id="ordBtn" title="Reorder folders and cans (drag and drop)" aria-label="Reorder" disabled>
+  <button class="sq" id="ordBtn" hidden title="Reorder folders and cans (drag and drop)" aria-label="Reorder" disabled>
     <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>
   </button>
   <button class="sq" style="margin-left:auto" id="themeBtn" aria-label="Toggle light or dark theme"></button>
@@ -320,6 +320,7 @@ let st = {page: 0, total: 0, items: []}, cur = null, mode = 'login', afterAuth =
 
 const mine = {owned: new Set(), wish: new Set()};
 let profile = null;
+let isOwner = false;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const img = k => k ? `style="background-image:url('/img/${encodeURI(k)}')"` : '';
 const opts = (list, first, fmt = v => v) => (first ? `<option value="">${first}</option>` : '') + list.map(v => `<option value="${esc(v)}">${esc(fmt(v))}</option>`).join('');
@@ -510,6 +511,7 @@ function route() {
 // ---------- вход и регистрация ----------
 function updateAuth() {
   $('#profBtn').hidden = !me;
+  $('#serBtn').hidden = !isOwner; $('#ordBtn').hidden = !isOwner;
   $('#authBtn').textContent = me ? 'Log out' : 'Log in / Sign up';
 }
 function setMode(m) {
@@ -521,7 +523,7 @@ function setMode(m) {
 }
 function needAuth(action) { if (me) return action(); afterAuth = action; setMode('register'); $('#authDlg').showModal(); }
 $('#authBtn').onclick = async () => {
-  if (me) { try { await api('/api/logout', {method: 'POST'}); } catch {} me = null; clearColl(); updateAuth(); }
+  if (me) { try { await api('/api/logout', {method: 'POST'}); } catch {} me = null; isOwner = false; clearColl(); updateAuth(); }
   else { afterAuth = null; setMode('login'); $('#authDlg').showModal(); }
 };
 $('#tLogin').onclick = () => setMode('login');
@@ -531,7 +533,7 @@ $('#authForm').onsubmit = async e => {
   try {
     const r = await api('/api/' + mode, {method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({nick: $('#aNick').value.trim(), password: $('#aPass').value})});
-    me = r.nick; updateAuth(); await loadColl(); $('#authForm').reset(); $('#authDlg').close();
+    me = r.nick; isOwner = r.role === 'owner'; updateAuth(); await loadColl(); $('#authForm').reset(); $('#authDlg').close();
     const a = afterAuth; afterAuth = null; if (a) a();
     if (/^#(map|owned|wish)/.test(location.hash)) route();
   } catch (err) { $('#aErr').textContent = err.message; }
@@ -845,7 +847,7 @@ async function showMap() {
 (async () => {
   applyTheme();
   counters();
-  try { me = (await api('/api/me')).nick; } catch {}
+  try { const m = await api('/api/me'); me = m.nick; isOwner = m.role === 'owner'; } catch {}
   updateAuth(); await loadColl(); await loadMeta(); route();
 })();
 </script>
