@@ -20,7 +20,7 @@ function sid(request) {
 async function currentUser(request, env) {
   const t = sid(request);
   if (!t) return null;
-  return env.DB.prepare('SELECT u.id, u.nick FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires > ?')
+  return env.DB.prepare('SELECT u.id, u.nick, u.role FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires > ?')
     .bind(await sha(t), Date.now()).first();
 }
 async function startSession(env, userId) {
@@ -38,7 +38,7 @@ async function register(request, env) {
   try {
     const r = await env.DB.prepare('INSERT INTO users (nick, nick_lc, salt, hash, created) VALUES (?, ?, ?, ?, ?)')
       .bind(nick, nick.toLowerCase(), hex(salt), await pbkdf2(password, salt), Date.now()).run();
-    return json({ nick }, 200, { 'Set-Cookie': await startSession(env, r.meta.last_row_id) });
+    return json({ nick, role: null }, 200, { 'Set-Cookie': await startSession(env, r.meta.last_row_id) });
   } catch (e) {
     if (/UNIQUE/i.test(String(e && e.message || e))) return json({ error: 'This nickname is already taken' }, 409);
     throw e;
@@ -49,7 +49,7 @@ async function login(request, env) {
   const { nick, password } = await request.json().catch(() => ({}));
   const u = await env.DB.prepare('SELECT * FROM users WHERE nick_lc = ?').bind(String(nick || '').toLowerCase()).first();
   if (!u || (await pbkdf2(String(password || ''), unhex(u.salt))) !== u.hash) return json({ error: 'Wrong nickname or password' }, 401);
-  return json({ nick: u.nick }, 200, { 'Set-Cookie': await startSession(env, u.id) });
+  return json({ nick: u.nick, role: u.role || null }, 200, { 'Set-Cookie': await startSession(env, u.id) });
 }
 
 async function logout(request, env) {
@@ -180,6 +180,7 @@ async function seriesList(q, env, request) {
 async function orderSet(request, env) {
   const u = await currentUser(request, env);
   if (!u) return json(NEED_LOGIN, 401);
+  if (u.role !== 'owner') return json({ error: 'Only the owner can change the order' }, 403);
   const { kind, brand, series_id, ids } = await request.json().catch(() => ({}));
   if (!Array.isArray(ids) || ids.length > 2000 || !ids.every(Number.isInteger)) return json({ error: 'Invalid data' }, 400);
   let sql, extra;
@@ -194,6 +195,7 @@ async function orderSet(request, env) {
 async function seriesCreate(request, env) {
   const user = await currentUser(request, env);
   if (!user) return json({ error: 'Please log in or sign up first' }, 401);
+  if (user.role !== 'owner') return json({ error: 'Only the owner can create folders' }, 403);
   const { brand, name } = await request.json().catch(() => ({}));
   const n = String(name || '').trim();
   if (!BRANDS.includes(brand)) return json({ error: 'Select a brand' }, 400);
@@ -356,7 +358,7 @@ async function handle(request, env) {
     if (p === '/api/can-edit' && m === 'POST') return editCan(request, env);
     if (p === '/api/series') return m === 'POST' ? seriesCreate(request, env) : seriesList(url.searchParams, env, request);
     if (p === '/api/order' && m === 'POST') return orderSet(request, env);
-    if (p === '/api/me') { const u = await currentUser(request, env); return json({ nick: u ? u.nick : null }); }
+    if (p === '/api/me') { const u = await currentUser(request, env); return json({ nick: u ? u.nick : null, role: u ? u.role || null : null }); }
     if (p === '/api/register' && m === 'POST') return register(request, env);
     if (p === '/api/login' && m === 'POST') return login(request, env);
     if (p === '/api/logout' && m === 'POST') return logout(request, env);
