@@ -62,9 +62,13 @@ dt{color:var(--mut)}dd{margin:0}
 .zbtn svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
 dialog>.close{position:absolute;top:10px;right:10px;margin:0;z-index:2}
 form.stack>h2:first-child,.tabs{padding-right:72px}
-.pbtns{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;align-items:flex-end;gap:8px;z-index:2}
-.pbtns button{box-shadow:0 1px 6px rgba(0,0,0,.4)}
-.editcan{width:40px;height:40px;padding:0;display:grid;place-items:center}
+#dbody{padding-top:46px}
+#dbody .dlg>div:last-child{padding-right:56px}
+.dbar{position:sticky;top:0;height:0;z-index:3}
+.dbar button{position:absolute;right:10px;box-shadow:0 1px 6px rgba(0,0,0,.4)}
+.dbar .close{top:10px}
+.dbar .editcan{top:54px;width:40px;height:40px;padding:0;display:grid;place-items:center}
+@media(max-width:720px){#dbody{padding-top:100px}}
 .editcan svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 form.stack{display:grid;gap:10px;padding:16px}
 form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
@@ -261,7 +265,13 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
   <div class="ztools"><button type="button" id="zOut" aria-label="Zoom out">−</button><button type="button" id="zIn" aria-label="Zoom in">+</button><button type="button" id="zFit" aria-label="Fit to window">Fit</button></div>
 </dialog>
 
-<dialog id="dlg"><div id="dbody"></div></dialog>
+<dialog id="dlg">
+  <div class="dbar">
+    <button type="button" class="close" data-close>Close</button>
+    <button type="button" class="editcan" id="editCan" title="Edit can" aria-label="Edit can"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg></button>
+  </div>
+  <div id="dbody"></div>
+</dialog>
 
 <dialog id="authDlg" class="sm">
   <button class="close" data-close>Close</button>
@@ -320,7 +330,7 @@ let st = {page: 0, total: 0, items: []}, cur = null, mode = 'login', afterAuth =
 
 const mine = {owned: new Set(), wish: new Set()};
 let profile = null;
-let isOwner = false;
+let isOwner = false, curCan = null;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const img = k => k ? `style="background-image:url('/img/${encodeURI(k)}')"` : '';
 const opts = (list, first, fmt = v => v) => (first ? `<option value="">${first}</option>` : '') + list.map(v => `<option value="${esc(v)}">${esc(fmt(v))}</option>`).join('');
@@ -384,14 +394,10 @@ function openZoom(c) {
 }
 function openCan(id) {
   const c = st.items.find(x => x.id === id); if (!c) return;
+  curCan = c;
   const inList = k => mine[k].has(id);
   $('#dbody').innerHTML = `<div class="dlg">
-    <div class="ph" ${img(c.photo || c.cover)}>
-      <div class="pbtns">
-        <button type="button" class="cclose" data-cclose>Close</button>
-        <button type="button" class="editcan" data-edit title="Edit can" aria-label="Edit can"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg></button>
-      </div>
-    </div>
+    <div class="ph" ${img(c.photo || c.cover)}></div>
     <div>
       <h2 style="margin:0">${esc(c.brand)}</h2><div>${esc(c.name)}</div>
       <dl>
@@ -409,8 +415,6 @@ function openCan(id) {
       </div>
     </div></div>`;
   $('#dbody').onclick = e => {
-    if (e.target.closest('[data-cclose]')) { $('#dlg').close(); return; }
-    if (e.target.closest('[data-edit]')) { needAuth(() => openEdit(c)); return; }
     if (e.target.closest('[data-zoom]')) { openZoom(c); return; }
     const k = e.target.dataset.k; if (!k) return;
     needAuth(async () => {
@@ -745,6 +749,7 @@ function fillProfile() {
 }
 const markDirty = () => { $('#saveBtn').hidden = false; };
 $('#profBtn').onclick = openProfile;
+$('#editCan').onclick = () => { if (curCan) needAuth(() => openEdit(curCan)); };
 $('#editBtn').onclick = () => setEdit(!edit);
 $('#avUp').onclick = () => $('#avFile').click();
 $('#avFile').onchange = () => {
