@@ -27,7 +27,7 @@ button{cursor:pointer}
 :focus-visible{outline:2px solid var(--ac);outline-offset:2px}
 .six{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;padding:8px 16px}
 .filters>*{width:100%}
-#folders,#sFolders,#scFolders{row-gap:18px}
+#folders,#sFolders,#scFolders,#subFolders{row-gap:18px}
 .tile{cursor:pointer}
 .cap{text-align:center;margin-top:8px;font-size:14px}
 .bbox{aspect-ratio:1;border:4px solid #0b0b0b;border-radius:18px;overflow:hidden;position:relative;background:var(--card)}
@@ -129,7 +129,7 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 #ordBtn{background:var(--card);border-color:var(--bd);color:var(--ink)}
 #ordBtn.on{background:var(--ac);border-color:var(--ac);color:#fff}
 #ordBtn:disabled{opacity:.4;cursor:not-allowed}
-.reordering #sFolders .tile,.reordering #sgrid .card{cursor:grab;outline:2px dashed var(--ac);outline-offset:3px}
+.reordering #sFolders .tile,.reordering #subFolders .tile,.reordering #sgrid .card{cursor:grab;outline:2px dashed var(--ac);outline-offset:3px}
 .sortable-ghost{opacity:.35}
 .micon{width:64px;height:64px;flex:none;background:currentColor;-webkit-mask:url(/map-icon.png) center/contain no-repeat;mask:url(/map-icon.png) center/contain no-repeat}
 .psplit{display:grid;grid-template-columns:1fr 1fr;padding:0;overflow:hidden}
@@ -138,11 +138,11 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 .psplit button:hover{background:color-mix(in srgb,var(--ink) 8%,transparent)}
 .psplit .arr{font-size:26px}
 [hidden]{display:none!important}
-#sFolders,#sgrid,#grid,#bgrid{grid-template-columns:repeat(9,minmax(0,1fr))}
-#sFolders .cap{font-size:13px}
+#sFolders,#subFolders,#sgrid,#grid,#bgrid{grid-template-columns:repeat(9,minmax(0,1fr))}
+#sFolders .cap,#subFolders .cap{font-size:13px}
 #sgrid .card p,#grid .card p,#bgrid .card p{font-size:12px;padding:6px 8px}
-@media(max-width:1100px){#sFolders,#sgrid,#grid,#bgrid{grid-template-columns:repeat(6,minmax(0,1fr))}}
-@media(max-width:720px){#sFolders,#sgrid,#grid,#bgrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:1100px){#sFolders,#subFolders,#sgrid,#grid,#bgrid{grid-template-columns:repeat(6,minmax(0,1fr))}}
+@media(max-width:720px){#sFolders,#subFolders,#sgrid,#grid,#bgrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:720px){.six{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 <script>(function(){try{var x=localStorage.getItem("theme");if(x)document.documentElement.dataset.theme=x}catch(e){}})()</script>
@@ -173,11 +173,7 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
     <select id="country"><option value="">Countries</option></select>
     <select id="volume"><option value="">Volume</option></select>
     <select id="year"><option value="">Year</option></select>
-    <select id="shape">
-      <option value="">Shape</option>
-      <option value="slim">Slim</option>
-      <option value="wide">Wide</option>
-    </select>
+    <select id="features"><option value="">Features</option></select>
   </form>
   <div class="six" id="folders"></div>
   <div id="results" hidden>
@@ -194,7 +190,7 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
     <select id="bcountry"><option value="">Countries</option></select>
     <select id="bvolume"><option value="">Volume</option></select>
     <select id="byear"><option value="">Year</option></select>
-    <select id="bshape"><option value="">Shape</option></select>
+    <select id="bfeatures"><option value="">Features</option></select>
   </form>
   <div class="six" id="sFolders"></div>
   <div id="bresults" hidden>
@@ -211,6 +207,7 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 
 <section id="seriesPage" hidden>
   <div class="bar"><a class="link" id="sBack" href="#">← Back</a><h2 id="sTitle"></h2></div>
+  <div class="six" id="subFolders" hidden></div>
   <div class="six grid" id="sgrid"></div>
   <button class="more" id="smore" hidden>Show more</button>
 </section>
@@ -291,6 +288,7 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
   <form class="stack" id="serForm">
     <h2 style="margin:0">New flavor/series folder</h2>
     <label>Brand<select id="sBrand" required></select></label>
+    <label id="sParentWrap" hidden>Put inside folder (optional)<select id="sParent"></select></label>
     <label>Folder name<input id="sName" required maxlength="60"></label>
     <div class="err" id="sErr"></div>
     <button class="primary">Create folder</button>
@@ -308,8 +306,7 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
     <label>Country<input name="country" list="countries" required maxlength="60"></label>
     <label>Volume, ml<span class="num"><input name="volume" type="number" min="1" max="5000" required></span></label>
     <label>Year<span class="num"><input name="year" type="number" min="1900" max="2100" required></span></label>
-    <label>Shape<select name="shape" required>
-      <option value="slim">Slim</option><option value="wide">Wide</option></select></label>
+    <label>Features<input name="features" list="featuresList" maxlength="60" placeholder="optional"></label>
     <label>Description<textarea name="description" rows="3" maxlength="2000"></textarea></label>
     <div class="hint" id="pEditHint" hidden>Photos are optional when editing: leave a field empty to keep the current photo.</div>
     <label>Photo (collage)<input name="photo" id="pPhoto" type="file" accept="image/jpeg,image/png,image/webp" required></label>
@@ -319,11 +316,11 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
   </form>
 </dialog>
 <datalist id="countries"></datalist>
+<datalist id="featuresList"></datalist>
 
 <script>
 const $ = s => document.querySelector(s);
 const PAGE = 48;
-const SHAPE = {slim: 'Slim', wide: 'Wide'};
 let me = null, meta = {brands: [], counts: {}, countries: [], volumes: [], years: [], all: 0};
 let st = {page: 0, total: 0, items: []}, cur = null, mode = 'login', afterAuth = null;
 
@@ -358,6 +355,8 @@ async function loadMeta() {
   fill('#country', opts(meta.countries, 'Countries'));
   fill('#volume', opts(meta.volumes, 'Volume', v => v + ' ml'));
   fill('#year', opts(meta.years, 'Year'));
+  fill('#features', opts(meta.features || [], 'Features'));
+  $('#featuresList').innerHTML = (meta.features || []).map(v => `<option value="${esc(v)}">`).join('');
   $('#countries').innerHTML = meta.countries.map(v => `<option value="${esc(v)}">`).join('');
   $('#pBrand').innerHTML = opts(meta.brands, 'Select a brand');
   $('#sBrand').innerHTML = opts(meta.brands, 'Select a brand');
@@ -403,7 +402,7 @@ function openCan(id) {
         <dt>Country</dt><dd>${esc(c.country)}</dd>
         <dt>Volume</dt><dd>${esc(c.volume)} ml</dd>
         <dt>Year</dt><dd>${esc(c.year)}</dd>
-        <dt>Shape</dt><dd>${esc(SHAPE[c.shape] || '—')}</dd>
+        ${c.features ? `<dt>Features</dt><dd>${esc(c.features)}</dd>` : ''}
         ${c.author ? `<dt>Published by</dt><dd>${esc(c.author)}</dd>` : ''}
       </dl>
       <p>${esc(c.description)}</p>
@@ -431,7 +430,7 @@ function openCan(id) {
 const show = id => ['home', 'brandPage', 'seriesPage', 'mapPage', 'scopePage'].forEach(s => $('#' + s).hidden = s !== id);
 function filterParams() {
   const p = new URLSearchParams();
-  for (const k of ['q', 'brand', 'country', 'volume', 'year', 'shape']) { const v = $('#' + k).value.trim(); if (v) p.set(k, v); }
+  for (const k of ['q', 'brand', 'country', 'volume', 'year', 'features']) { const v = $('#' + k).value.trim(); if (v) p.set(k, v); }
   return p;
 }
 function showHome() {
@@ -465,12 +464,12 @@ async function loadBrandFilters(brand) {
     $('#bcountry').innerHTML = opts(m.countries, 'Countries');
     $('#bvolume').innerHTML = opts(m.volumes, 'Volume', v => v + ' ml');
     $('#byear').innerHTML = opts(m.years, 'Year');
-    $('#bshape').innerHTML = '<option value="">Shape</option>' + ['slim', 'wide'].filter(x => m.shapes.includes(x)).map(x => `<option value="${x}">${SHAPE[x]}</option>`).join('');
+    $('#bfeatures').innerHTML = opts(m.features || [], 'Features');
   } catch {}
 }
 function brandSearch() {
   const p = new URLSearchParams();
-  for (const [k, id] of [['q', 'bq'], ['country', 'bcountry'], ['volume', 'bvolume'], ['year', 'byear'], ['shape', 'bshape']]) {
+  for (const [k, id] of [['q', 'bq'], ['country', 'bcountry'], ['volume', 'bvolume'], ['year', 'byear'], ['features', 'bfeatures']]) {
     const v = $('#' + id).value.trim(); if (v) p.set(k, v);
   }
   const searching = p.toString() !== '';
@@ -483,12 +482,16 @@ let bTimer;
 $('#bf').addEventListener('input', () => { clearTimeout(bTimer); bTimer = setTimeout(brandSearch, 250); });
 async function showSeries(id) {
   currentSeries = id;
-  show('seriesPage'); $('#sTitle').textContent = ''; $('#sgrid').innerHTML = '';
+  show('seriesPage'); $('#sTitle').textContent = ''; $('#sgrid').innerHTML = ''; $('#subFolders').innerHTML = ''; $('#subFolders').hidden = true;
   if (scope && !me) { $('#sgrid').innerHTML = '<div class="empty">Log in to see this page.</div>'; return; }
   try {
     const s = await api('/api/series?id=' + id);
-    $('#sTitle').textContent = s.brand + ' / ' + s.name;
-    $('#sBack').href = '#' + pre() + 'b/' + encodeURIComponent(s.brand);
+    currentBrand = s.brand;
+    $('#sTitle').textContent = s.brand + ' / ' + s.path.join(' / ');
+    $('#sBack').href = '#' + pre() + (s.parent_id ? 's/' + s.parent_id : 'b/' + encodeURIComponent(s.brand));
+    const sub = await api('/api/series?brand=' + encodeURIComponent(s.brand) + '&parent=' + id + (scope ? '&kind=' + scope : ''));
+    $('#subFolders').innerHTML = bySeries(sub.items).map(seriesTile).join('');
+    $('#subFolders').hidden = !sub.items.length;
     const base = new URLSearchParams({series_id: id}); if (scope) base.set('kind', scope);
     loadList(base, {grid: '#sgrid', more: '#smore'}, false);
   } catch (e) { $('#sgrid').innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
@@ -550,27 +553,49 @@ $('#authForm').onsubmit = async e => {
 $('#authDlg').addEventListener('close', () => { afterAuth = null; });
 
 // ---------- создание папки вкуса/серии ----------
-$('#serBtn').onclick = () => needAuth(() => { $('#sErr').textContent = ''; $('#serDlg').showModal(); });
+$('#serBtn').onclick = () => needAuth(async () => {
+  $('#sErr').textContent = '';
+  const here = (!$('#brandPage').hidden || !$('#seriesPage').hidden) && !scope && currentBrand;
+  if (here) { $('#sBrand').value = currentBrand; $('#sParentWrap').hidden = false; await loadParentOpts(currentBrand, !$('#seriesPage').hidden ? currentSeries : null); }
+  else $('#sParentWrap').hidden = true;
+  $('#serDlg').showModal();
+});
+$('#sBrand').onchange = () => { const b = $('#sBrand').value; $('#sParentWrap').hidden = !b; if (b) loadParentOpts(b); };
+$('#serDlg').addEventListener('close', () => { $('#serForm').reset(); $('#sParentWrap').hidden = true; });
 $('#serForm').onsubmit = async e => {
   e.preventDefault(); $('#sErr').textContent = '';
+  const b = $('#sBrand').value, parent = $('#sParent').value;
   try {
     await api('/api/series', {method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({brand: $('#sBrand').value, name: $('#sName').value})});
-    const b = $('#sBrand').value; $('#serForm').reset(); $('#serDlg').close();
-    if (location.hash === '#b/' + encodeURIComponent(b)) route(); else location.hash = 'b/' + encodeURIComponent(b);
+      body: JSON.stringify({brand: b, name: $('#sName').value, parent_id: parent ? Number(parent) : null})});
+    $('#serDlg').close();
+    const target = parent ? '#s/' + parent : '#b/' + encodeURIComponent(b);
+    if (location.hash === target) route(); else location.hash = target.slice(1);
   } catch (err) { $('#sErr').textContent = err.message; }
 };
 
 // ---------- публикация ----------
 $('#pubBtn').onclick = () => needAuth(() => { $('#pErr').textContent = ''; $('#pSerWrap').hidden = true; $('#pubDlg').showModal(); });
 let editId = null;
+function folderOptions(items) {
+  const by = new Map(items.map(s => [s.id, s]));
+  const label = s => { const parts = []; let x = s, n = 0; while (x && n++ < 10) { parts.unshift(x.name); x = by.get(x.parent_id); } return parts.join(' / '); };
+  return items.map(s => ({id: s.id, text: label(s)})).sort((a, b) => coll.compare(a.text, b.text));
+}
 async function loadSeriesOpts(b, selected) {
   try {
-    const d = await api('/api/series?brand=' + encodeURIComponent(b));
-    $('#pSeries').innerHTML = bySeries(d.items).map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+    const d = await api('/api/series?all=1&brand=' + encodeURIComponent(b));
+    $('#pSeries').innerHTML = folderOptions(d.items).map(o => `<option value="${o.id}">${esc(o.text)}</option>`).join('');
     $('#pHint').textContent = d.items.length ? '' : 'This brand has no folders yet. Create one first with the folder button.';
     if (selected) $('#pSeries').value = String(selected);
   } catch (e) { $('#pHint').textContent = e.message; }
+}
+async function loadParentOpts(b, selected) {
+  try {
+    const d = await api('/api/series?all=1&brand=' + encodeURIComponent(b));
+    $('#sParent').innerHTML = '<option value="">- directly in the brand -</option>' + folderOptions(d.items).map(o => `<option value="${o.id}">${esc(o.text)}</option>`).join('');
+    if (selected) $('#sParent').value = String(selected);
+  } catch {}
 }
 $('#pBrand').onchange = () => {
   const b = $('#pBrand').value; $('#pSerWrap').hidden = !b;
@@ -583,7 +608,7 @@ async function openEdit(c) {
   $('#pEditHint').hidden = false; $('#pPhoto').required = false;
   $('#pBrand').value = c.brand; $('#pSerWrap').hidden = false;
   await loadSeriesOpts(c.brand, c.series_id);
-  for (const k of ['name', 'country', 'volume', 'year', 'shape', 'description']) f.elements.namedItem(k).value = c[k] ?? '';
+  for (const k of ['name', 'country', 'volume', 'year', 'features', 'description']) f.elements.namedItem(k).value = c[k] ?? '';
   $('#dlg').close(); $('#pubDlg').showModal();
 }
 $('#pubDlg').addEventListener('close', () => {
@@ -613,7 +638,7 @@ const clickFolder = e => {
   if (reorder) return;
   location.hash = pre() + (f.dataset.b ? 'b/' + encodeURIComponent(f.dataset.b) : 's/' + f.dataset.s);
 };
-for (const id of ['#folders', '#sFolders', '#scFolders']) {
+for (const id of ['#folders', '#sFolders', '#scFolders', '#subFolders']) {
   $(id).addEventListener('click', clickFolder);
   $(id).addEventListener('keydown', e => { if (e.key === 'Enter') clickFolder(e); });
 }
@@ -634,22 +659,22 @@ function applyTheme() { $('#themeBtn').innerHTML = isDark() ? SUN : MOON; $('#th
 $('#themeBtn').onclick = () => { const t = isDark() ? 'light' : 'dark'; document.documentElement.dataset.theme = t; try { localStorage.setItem('theme', t); } catch {} applyTheme(); };
 
 // ---------- manual order of folders and cans (drag and drop, SortableJS from the jsDelivr CDN) ----------
-let reorder = false, sortable = null;
+let reorder = false, sortables = [];
 const ORDER_LIB = 'https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js';
-const ordTarget = () => !$('#brandPage').hidden ? {el: '#sFolders', kind: 'series'} : !$('#seriesPage').hidden ? {el: '#sgrid', kind: 'cans'} : null;
+const ordTargets = () => !$('#brandPage').hidden ? [{el: '#sFolders', kind: 'series'}]
+  : !$('#seriesPage').hidden ? [...($('#subFolders').hidden ? [] : [{el: '#subFolders', kind: 'series'}]), {el: '#sgrid', kind: 'cans'}] : [];
 async function setReorder(on) {
   reorder = on; $('#ordBtn').classList.toggle('on', on); document.body.classList.toggle('reordering', on);
-  if (sortable) { sortable.destroy(); sortable = null; }
-  const t = ordTarget(); if (!on || !t) return;
+  sortables.forEach(x => x.destroy()); sortables = [];
+  const ts = ordTargets(); if (!on || !ts.length) return;
   try {
     if (!window.Sortable) await loadScript(ORDER_LIB);
-    if (t.kind === 'cans') { let n = -1; while (st.items.length < st.total && st.items.length !== n) { n = st.items.length; await loadList(cur.base, cur, true); } }
+    if (ts.some(t => t.kind === 'cans')) { let n = -1; while (st.items.length < st.total && st.items.length !== n) { n = st.items.length; await loadList(cur.base, cur, true); } }
     if (!reorder) return;
-    sortable = Sortable.create($(t.el), {animation: 150, draggable: t.kind === 'series' ? '.tile' : '.card', onEnd: saveOrder});
+    sortables = ts.map(t => Sortable.create($(t.el), {animation: 150, draggable: t.kind === 'series' ? '.tile' : '.card', onEnd: () => saveOrder(t)}));
   } catch (e) { alert(e.message); reorder = false; $('#ordBtn').classList.remove('on'); document.body.classList.remove('reordering'); }
 }
-async function saveOrder() {
-  const t = ordTarget(); if (!t) return;
+async function saveOrder(t) {
   const ids = [...$(t.el).children].map(el => +(el.dataset.s || el.dataset.id)).filter(Number.isInteger);
   try {
     await api('/api/order', {method: 'POST', headers: {'Content-Type': 'application/json'},
