@@ -76,11 +76,11 @@ async function cans(q, env, request) {
   if (q.get('meta') && q.get('brand')) {
     const b = q.get('brand');
     const col = async (c, order) => (await env.DB.prepare(`SELECT DISTINCT ${c} AS v FROM cans WHERE brand = ? AND ${c} IS NOT NULL ORDER BY ${order}`).bind(b).all()).results.map(r => r.v);
-    return json({ countries: await col('country', '1'), volumes: await col('volume', '1'), years: await col('year', '1 DESC'), features: await col('features', '1') });
+    return json({ countries: (await env.DB.prepare('SELECT MIN(j.value) AS v FROM cans c, json_each(c.countries) j WHERE c.brand = ? GROUP BY lower(j.value) ORDER BY 1').bind(b).all()).results.map(r => r.v), volumes: await col('volume', '1'), years: await col('year', '1 DESC'), features: await col('features', '1') });
   }
   if (q.get('meta')) {
     const c = await env.DB.prepare('SELECT brand, COUNT(*) n FROM cans GROUP BY brand').all();
-    const countries = await env.DB.prepare('SELECT DISTINCT country v FROM cans WHERE country IS NOT NULL ORDER BY 1').all();
+    const countries = await env.DB.prepare('SELECT MIN(j.value) AS v FROM cans c, json_each(c.countries) j GROUP BY lower(j.value) ORDER BY 1').all();
     const n = await env.DB.prepare('SELECT COUNT(*) n FROM cans').first();
     const vols = await env.DB.prepare('SELECT DISTINCT volume v FROM cans WHERE volume IS NOT NULL ORDER BY 1').all();
     const yrs = await env.DB.prepare('SELECT DISTINCT year v FROM cans WHERE year IS NOT NULL ORDER BY 1 DESC').all();
@@ -99,7 +99,8 @@ async function cans(q, env, request) {
     });
   }
   const where = [], args = [];
-  for (const k of ['brand', 'country']) if (q.get(k)) { where.push(`${k} = ?`); args.push(q.get(k)); }
+  if (q.get('brand')) { where.push('brand = ?'); args.push(q.get('brand')); }
+  if (q.get('country')) { where.push('EXISTS (SELECT 1 FROM json_each(c.countries) j WHERE j.value = ? COLLATE NOCASE)'); args.push(q.get('country')); }
   if (q.get('features')) { where.push('features = ? COLLATE NOCASE'); args.push(q.get('features')); }
   for (const k of ['volume', 'year', 'series_id']) if (q.get(k)) { where.push(`${k} = ?`); args.push(Number(q.get(k))); }
   if (q.get('q')) { where.push('(name LIKE ? OR description LIKE ?)'); args.push(`%${q.get('q')}%`, `%${q.get('q')}%`); }
@@ -114,6 +115,18 @@ async function cans(q, env, request) {
   return json({ total: total.n, items: rows.results });
 }
 
+// несколько стран на банку: поля country повторяются, максимум 20
+function parseCountries(f) {
+  const list = [], seen = new Set();
+  for (const v of f.getAll('country')) {
+    const c = String(v || '').trim();
+    if (!c) continue;
+    if (c.length > 60) return null;
+    if (!seen.has(c.toLowerCase())) { seen.add(c.toLowerCase()); list.push(c); }
+  }
+  return list.length && list.length <= 20 ? list : null;
+}
+
 async function publish(request, env) {
   const user = await currentUser(request, env);
   if (!user) return json({ error: 'Please log in or sign up first' }, 401);
@@ -122,7 +135,7 @@ async function publish(request, env) {
   const f = await request.formData().catch(() => null);
   if (!f) return json({ error: 'Invalid data' }, 400);
   const brand = f.get('brand'), features = String(f.get('features') || '').trim();
-  const name = String(f.get('name') || '').trim(), country = String(f.get('country') || '').trim();
+  const name = String(f.get('name') || '').trim(), countries = parseCountries(f);
   const description = String(f.get('description') || '').trim();
   const volume = Number(f.get('volume')), year = Number(f.get('year'));
   const photo = f.get('photo'), cover = f.get('cover');
@@ -132,7 +145,7 @@ async function publish(request, env) {
   const ser = await env.DB.prepare('SELECT id FROM series WHERE id = ? AND brand = ?').bind(seriesId, brand).first();
   if (!ser) return json({ error: 'Select a flavor/series folder' }, 400);
   if (!name || name.length > 120) return json({ error: 'Enter a name (up to 120 characters)' }, 400);
-  if (!country || country.length > 60) return json({ error: 'Enter a country' }, 400);
+  if (!countries) return json({ error: 'Enter 1 to 20 countries (up to 60 characters each)' }, 400);
   if (!Number.isInteger(volume) || volume < 1 || volume > 5000) return json({ error: 'Volume: a number from 1 to 5000 ml' }, 400);
   if (!Number.isInteger(year) || year < 1900 || year > 2100) return json({ error: 'Enter a year' }, 400);
   if (features.length > 60) return json({ error: 'Features: up to 60 characters' }, 400);
@@ -142,8 +155,8 @@ async function publish(request, env) {
   if (!okFile(photo)) return json({ error: 'Photo: JPG, PNG or WebP, up to 8 MB' }, 400);
   if (cover && cover.size && !okFile(cover)) return json({ error: 'Cover: JPG, PNG or WebP, up to 8 MB' }, 400);
 
-  const r = await env.DB.prepare('INSERT INTO cans (name, brand, country, volume, year, features, description, user_id, series_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(name, brand, country, volume, year, features || null, description, user.id, seriesId).run();
+  const r = await env.DB.prepare('INSERT INTO cans (name, brand, country, countries, volume, year, features, description, user_id, series_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(name, brand, countries.join(', '), JSON.stringify(countries), volume, year, features || null, description, user.id, seriesId).run();
   const id = r.meta.last_row_id;
   try {
     const photoKey = `cans/${id}.${TYPES[photo.type]}`;
@@ -326,7 +339,7 @@ async function editCan(request, env) {
   if (!old) return json({ error: 'Can not found' }, 404);
 
   const brand = f.get('brand'), features = String(f.get('features') || '').trim();
-  const name = String(f.get('name') || '').trim(), country = String(f.get('country') || '').trim();
+  const name = String(f.get('name') || '').trim(), countries = parseCountries(f);
   const description = String(f.get('description') || '').trim();
   const volume = Number(f.get('volume')), year = Number(f.get('year')), seriesId = Number(f.get('series_id'));
   const photo = f.get('photo'), cover = f.get('cover');
@@ -337,7 +350,7 @@ async function editCan(request, env) {
   const ser = await env.DB.prepare('SELECT id FROM series WHERE id = ? AND brand = ?').bind(seriesId, brand).first();
   if (!ser) return json({ error: 'Select a flavor/series folder' }, 400);
   if (!name || name.length > 120) return json({ error: 'Enter a name (up to 120 characters)' }, 400);
-  if (!country || country.length > 60) return json({ error: 'Enter a country' }, 400);
+  if (!countries) return json({ error: 'Enter 1 to 20 countries (up to 60 characters each)' }, 400);
   if (!Number.isInteger(volume) || volume < 1 || volume > 5000) return json({ error: 'Volume: a number from 1 to 5000 ml' }, 400);
   if (!Number.isInteger(year) || year < 1900 || year > 2100) return json({ error: 'Enter a year' }, 400);
   if (features.length > 60) return json({ error: 'Features: up to 60 characters' }, 400);
@@ -358,8 +371,8 @@ async function editCan(request, env) {
   } catch {
     return json({ error: 'Could not save the photo, please try again' }, 500);
   }
-  await env.DB.prepare('UPDATE cans SET name = ?, brand = ?, country = ?, volume = ?, year = ?, features = ?, description = ?, series_id = ?, photo = ?, cover = ?, sort = ? WHERE id = ?')
-    .bind(name, brand, country, volume, year, features || null, description, seriesId, photoKey, coverKey, old.series_id === seriesId ? old.sort : null, id).run();
+  await env.DB.prepare('UPDATE cans SET name = ?, brand = ?, country = ?, countries = ?, volume = ?, year = ?, features = ?, description = ?, series_id = ?, photo = ?, cover = ?, sort = ? WHERE id = ?')
+    .bind(name, brand, countries.join(', '), JSON.stringify(countries), volume, year, features || null, description, seriesId, photoKey, coverKey, old.series_id === seriesId ? old.sort : null, id).run();
   for (const k of new Set([old.photo, old.cover])) if (k && k !== photoKey && k !== coverKey) await env.PHOTOS.delete(k);
   return json({ ok: true });
 }
