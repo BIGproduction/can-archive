@@ -43,6 +43,19 @@ button{cursor:pointer}
 .mark{position:absolute;right:6px;top:6px;background:var(--ac);color:#fff;font-size:12px;padding:2px 7px;border-radius:10px}
 .card p{margin:0;padding:8px 10px;font-size:13px;line-height:1.35}
 .card b{display:block;font-size:14px}
+.card .nm{font-weight:600;font-size:14px;padding:8px 10px 4px}
+.card .vy{padding:2px 10px 8px}
+.flags{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;padding:2px 10px 4px}
+.fc{display:block;position:relative;aspect-ratio:4/3;background:var(--bd);border-radius:2px;overflow:hidden}
+.fc img{display:block;width:100%;height:100%;object-fit:cover}
+.fc img.bad{opacity:0}
+.fc.unk::after{content:"?";position:absolute;inset:0;display:grid;place-items:center;font-size:11px;color:var(--mut)}
+.cn{display:inline-flex;align-items:center;gap:6px;margin:0 12px 4px 0}
+.cn .fc{width:24px;flex:none}
+.crow{display:flex;gap:6px;margin-top:6px}
+.crow input{flex:1;min-width:0}
+.crow .cdel{padding:0 12px}
+#pCountryAdd{justify-self:start;margin-top:6px}
 .bar{padding:8px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .bar h2{margin:0;font-size:22px}
 .link{color:var(--ac);text-decoration:none;cursor:pointer}
@@ -141,6 +154,9 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 #sFolders,#subFolders,#sgrid,#grid,#bgrid{grid-template-columns:repeat(9,minmax(0,1fr))}
 #sFolders .cap,#subFolders .cap{font-size:13px}
 #sgrid .card p,#grid .card p,#bgrid .card p{font-size:12px;padding:6px 8px}
+#sgrid .card .nm,#grid .card .nm,#bgrid .card .nm{font-size:12px;padding:6px 8px 3px}
+#sgrid .card .vy,#grid .card .vy,#bgrid .card .vy{padding:2px 8px 6px}
+#sgrid .flags,#grid .flags,#bgrid .flags{padding:2px 8px 3px;gap:3px}
 @media(max-width:1100px){#sFolders,#subFolders,#sgrid,#grid,#bgrid{grid-template-columns:repeat(6,minmax(0,1fr))}}
 @media(max-width:720px){#sFolders,#subFolders,#sgrid,#grid,#bgrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:720px){.six{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -303,7 +319,11 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
     <label id="pSerWrap" hidden>Flavor / series<select name="series_id" id="pSeries" required></select>
       <span class="hint" id="pHint"></span></label>
     <label>Name<input name="name" required maxlength="120"></label>
-    <label>Country<input name="country" list="countries" required maxlength="60"></label>
+    <div class="clist">
+      <label>Country<input name="country" list="countries" required maxlength="60"></label>
+      <div id="pCountryMore"></div>
+      <button type="button" id="pCountryAdd">Add</button> <span class="hint" id="pCountryHint">up to 20 countries</span>
+    </div>
     <label>Volume, ml<span class="num"><input name="volume" type="number" min="1" max="5000" required></span></label>
     <label>Year<span class="num"><input name="year" type="number" min="1900" max="2100" required></span></label>
     <label>Features<input name="features" list="featuresList" maxlength="60" placeholder="optional"></label>
@@ -380,7 +400,9 @@ function render() {
   $(cur.grid).innerHTML = st.items.length ? st.items.map(c => `
     <div class="card" tabindex="0" data-id="${c.id}">
       <div class="ph" ${img(c.cover || c.photo)}>${owned.has(c.id) ? '<span class="mark">owned</span>' : wish.has(c.id) ? '<span class="mark">wish</span>' : ''}</div>
-      <p><b>${esc(c.brand)}</b>${esc(c.name)}<br>${esc(c.volume)} ml · ${esc(c.year)}</p>
+      <p class="nm">${esc(c.name)}</p>
+      <div class="flags">${countriesOf(c).map(flagHtml).join('')}</div>
+      <p class="vy">${esc(c.volume)} ml · ${esc(c.year)}</p>
     </div>`).join('') : '<div class="empty">No cans here yet.</div>';
   $(cur.more).hidden = st.items.length >= st.total;
 }
@@ -399,7 +421,7 @@ function openCan(id) {
     <div>
       <h2 style="margin:0">${esc(c.brand)}</h2><div>${esc(c.name)}</div>
       <dl>
-        <dt>Country</dt><dd>${esc(c.country)}</dd>
+        <dt>${countriesOf(c).length > 1 ? 'Countries' : 'Country'}</dt><dd>${countriesOf(c).map(n => `<span class="cn">${flagHtml(n)} ${esc(n)}</span>`).join('')}</dd>
         <dt>Volume</dt><dd>${esc(c.volume)} ml</dd>
         <dt>Year</dt><dd>${esc(c.year)}</dd>
         ${c.features ? `<dt>Features</dt><dd>${esc(c.features)}</dd>` : ''}
@@ -576,6 +598,62 @@ $('#serForm').onsubmit = async e => {
 
 // ---------- публикация ----------
 $('#pubBtn').onclick = () => needAuth(() => { $('#pErr').textContent = ''; $('#pSerWrap').hidden = true; $('#pubDlg').showModal(); });
+// ---------- флаги: название страны -> код -> картинка флага (jsDelivr, flag-icons) ----------
+const FLAG_URL = 'https://cdn.jsdelivr.net/npm/flag-icons@7.2.3/flags/4x3/';
+const FLAG_ALIASES = {usa: 'us', america: 'us', uk: 'gb', 'great britain': 'gb', britain: 'gb', england: 'gb-eng', scotland: 'gb-sct', wales: 'gb-wls',
+  'northern ireland': 'gb-nir', uae: 'ae', russia: 'ru', 'south korea': 'kr', korea: 'kr', 'north korea': 'kp', czechia: 'cz', 'czech republic': 'cz',
+  'ivory coast': 'ci', macau: 'mo', 'hong kong': 'hk', palestine: 'ps', turkey: 'tr', vietnam: 'vn', 'cape verde': 'cv', swaziland: 'sz',
+  macedonia: 'mk', 'north macedonia': 'mk', burma: 'mm', congo: 'cg', 'dr congo': 'cd', 'east timor': 'tl', holland: 'nl', 'soviet union': 'su',
+  ussr: 'su', europe: 'eu', 'european union': 'eu', vatican: 'va', kosovo: 'xk', reunion: 're', 'united states of america': 'us', 'the netherlands': 'nl',
+  bosnia: 'ba', 'st kitts': 'kn', 'st lucia': 'lc', 'saint lucia': 'lc', 'cocos islands': 'cc', 'falkland islands': 'fk', 'french guiana': 'gf'};
+const ISO_CODES = 'AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS XK YE YT ZA ZM ZW EU UN';
+let FLAG_MAP = null;
+const normName = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
+function flagMap() {
+  if (FLAG_MAP) return FLAG_MAP;
+  FLAG_MAP = new Map();
+  try {
+    const dn = new Intl.DisplayNames(['en'], {type: 'region'});
+    for (const code of ISO_CODES.split(' ')) {
+      try { const n = dn.of(code), k = n && normName(n); if (k && n !== code && !FLAG_MAP.has(k)) FLAG_MAP.set(k, code.toLowerCase()); } catch {}
+    }
+  } catch {}
+  for (const [k, v] of Object.entries(FLAG_ALIASES)) FLAG_MAP.set(normName(k), v);
+  return FLAG_MAP;
+}
+function flagCode(text) {
+  const m = flagMap(), full = normName(text);
+  if (m.has(full)) return m.get(full);
+  const seg = normName(String(text).split(/\s+(?:-|–|for)\s+|[,(/]/)[0]); // "Russia - Nagutsk" -> "russia", "France for Netherlands" -> "france"
+  if (m.has(seg)) return m.get(seg);
+  const w = seg.split(' ');
+  for (let n = Math.min(4, w.length); n >= 1; n--) { const k = w.slice(0, n).join(' '); if (m.has(k)) return m.get(k); }
+  return null;
+}
+const flagHtml = name => {
+  const c = flagCode(name);
+  return c ? `<span class="fc" title="${esc(name)}"><img src="${FLAG_URL}${c}.svg" alt="${esc(name)}" loading="lazy" onerror="this.classList.add('bad')"></span>`
+           : `<span class="fc unk" title="${esc(name)}"></span>`;
+};
+const countriesOf = c => {
+  try { const a = JSON.parse(c.countries || 'null'); if (Array.isArray(a) && a.length) return a; } catch {}
+  return c.country ? [c.country] : [];
+};
+// ---------- несколько стран в форме публикации (до 20) ----------
+function updateCountryAdd() {
+  const n = $('#pCountryMore').children.length + 1;
+  $('#pCountryAdd').disabled = n >= 20;
+  $('#pCountryHint').textContent = n >= 20 ? 'limit reached: 20 countries' : 'up to 20 countries';
+}
+function addCountryRow(value = '') {
+  if ($('#pCountryMore').children.length + 1 >= 20) return;
+  $('#pCountryMore').insertAdjacentHTML('beforeend', `<div class="crow"><input name="country" list="countries" maxlength="60" placeholder="Another country" value="${esc(value)}"><button type="button" class="cdel" aria-label="Remove country">×</button></div>`);
+  updateCountryAdd();
+}
+function resetCountryRows() { $('#pCountryMore').innerHTML = ''; updateCountryAdd(); }
+$('#pCountryAdd').onclick = () => addCountryRow();
+$('#pCountryMore').addEventListener('click', e => { const b = e.target.closest('.cdel'); if (b) { b.closest('.crow').remove(); updateCountryAdd(); } });
+
 let editId = null;
 function folderOptions(items) {
   const by = new Map(items.map(s => [s.id, s]));
@@ -608,11 +686,15 @@ async function openEdit(c) {
   $('#pEditHint').hidden = false; $('#pPhoto').required = false;
   $('#pBrand').value = c.brand; $('#pSerWrap').hidden = false;
   await loadSeriesOpts(c.brand, c.series_id);
-  for (const k of ['name', 'country', 'volume', 'year', 'features', 'description']) f.elements.namedItem(k).value = c[k] ?? '';
+  for (const k of ['name', 'volume', 'year', 'features', 'description']) f.elements.namedItem(k).value = c[k] ?? '';
+  resetCountryRows();
+  const cl = countriesOf(c);
+  $('#pubForm input[name="country"]').value = cl[0] || '';
+  cl.slice(1).forEach(addCountryRow);
   $('#dlg').close(); $('#pubDlg').showModal();
 }
 $('#pubDlg').addEventListener('close', () => {
-  editId = null; $('#pubForm').reset(); $('#pSerWrap').hidden = true;
+  editId = null; $('#pubForm').reset(); resetCountryRows(); $('#pSerWrap').hidden = true;
   $('#pubTitle').textContent = 'Publish a can'; $('#pSubmit').textContent = 'Publish';
   $('#pEditHint').hidden = true; $('#pPhoto').required = true;
 });
