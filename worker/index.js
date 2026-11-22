@@ -152,19 +152,40 @@ async function publish(request, env) {
   if (description.length > 2000) return json({ error: 'Description is too long' }, 400);
 
   const okFile = x => x && typeof x === 'object' && TYPES[x.type] && x.size > 0 && x.size <= MAX_FILE;
-  if (!okFile(photo)) return json({ error: 'Photo: JPG, PNG or WebP, up to 8 MB' }, 400);
+  // дублирование: если новое фото не выбрано, берём копию фото исходной банки
+  let src = null;
+  if (!okFile(photo)) {
+    const copyFrom = Number(f.get('copy_from')) || 0;
+    src = copyFrom ? await env.DB.prepare('SELECT photo, cover FROM cans WHERE id = ?').bind(copyFrom).first() : null;
+    if (!src || !src.photo) return json({ error: 'Photo: JPG, PNG or WebP, up to 8 MB' }, 400);
+  }
   if (cover && cover.size && !okFile(cover)) return json({ error: 'Cover: JPG, PNG or WebP, up to 8 MB' }, 400);
 
-  const r = await env.DB.prepare('INSERT INTO cans (name, brand, country, countries, volume, year, features, description, user_id, series_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(name, brand, countries.join(', '), JSON.stringify(countries), volume, year, features || null, description, user.id, seriesId).run();
+  // новая банка встаёт в самый верх папки (раньше всех, у кого задан ручной порядок)
+  const r = await env.DB.prepare('INSERT INTO cans (name, brand, country, countries, volume, year, features, description, user_id, series_id, sort) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT MIN(sort) - 1 FROM cans WHERE series_id = ?))')
+    .bind(name, brand, countries.join(', '), JSON.stringify(countries), volume, year, features || null, description, user.id, seriesId, seriesId).run();
   const id = r.meta.last_row_id;
   try {
-    const photoKey = `cans/${id}.${TYPES[photo.type]}`;
-    await env.PHOTOS.put(photoKey, photo.stream(), { httpMetadata: { contentType: photo.type } });
-    let coverKey = photoKey; // без отдельной обложки в каталоге показывается само фото
+    let photoKey, coverKey;
+    if (src) {
+      photoKey = `cans/${id}.${src.photo.split('.').pop()}`;
+      const po = await env.PHOTOS.get(src.photo);
+      if (!po) throw new Error('source photo missing');
+      await env.PHOTOS.put(photoKey, po.body, { httpMetadata: po.httpMetadata });
+    } else {
+      photoKey = `cans/${id}.${TYPES[photo.type]}`;
+      await env.PHOTOS.put(photoKey, photo.stream(), { httpMetadata: { contentType: photo.type } });
+    }
+    coverKey = photoKey; // без отдельной обложки в каталоге показывается само фото
     if (cover && cover.size) {
       coverKey = `cans/${id}-cover.${TYPES[cover.type]}`;
       await env.PHOTOS.put(coverKey, cover.stream(), { httpMetadata: { contentType: cover.type } });
+    } else if (src && src.cover && src.cover !== src.photo) {
+      const co = await env.PHOTOS.get(src.cover);
+      if (co) {
+        coverKey = `cans/${id}-cover.${src.cover.split('.').pop()}`;
+        await env.PHOTOS.put(coverKey, co.body, { httpMetadata: co.httpMetadata });
+      }
     }
     await env.DB.prepare('UPDATE cans SET photo = ?, cover = ? WHERE id = ?').bind(photoKey, coverKey, id).run();
   } catch {
