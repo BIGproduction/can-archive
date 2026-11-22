@@ -139,8 +139,10 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 .zbox img{position:absolute;left:50%;top:50%;max-width:100%;max-height:100%;transform:translate(-50%,-50%);user-select:none;-webkit-user-drag:none}
 .ztools{position:absolute;left:10px;bottom:10px;display:flex;gap:6px;z-index:2}
 .ztools button{min-width:40px;height:40px;padding:0 10px;font-size:20px}
-#ordBtn{background:var(--card);border-color:var(--bd);color:var(--ink)}
-#ordBtn.on{background:var(--ac);border-color:var(--ac);color:#fff}
+#ordBtn,#dupBtn{background:var(--card);border-color:var(--bd);color:var(--ink)}
+#ordBtn.on,#dupBtn.on{background:var(--ac);border-color:var(--ac);color:#fff}
+.duplicating .card{cursor:copy}
+.duplicating .card:hover{outline:2px solid var(--ac);outline-offset:3px}
 #ordBtn:disabled{opacity:.4;cursor:not-allowed}
 .reordering #sFolders .tile,.reordering #subFolders .tile,.reordering #sgrid .card{cursor:grab;outline:2px dashed var(--ac);outline-offset:3px}
 .sortable-ghost{opacity:.35}
@@ -179,6 +181,10 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
   <button class="sq" id="ordBtn" hidden title="Reorder folders and cans (drag and drop)" aria-label="Reorder" disabled>
     <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>
   </button>
+  <button class="sq" id="dupBtn" title="Duplicate a can: press, then click a can" aria-label="Duplicate a can">
+    <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>
+  </button>
+  <span class="hint" id="dupHint" hidden>Click the can you want to duplicate</span>
   <button class="sq" style="margin-left:auto" id="themeBtn" aria-label="Toggle light or dark theme"></button>
 </div>
 
@@ -328,7 +334,7 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
     <label>Year<span class="num"><input name="year" type="number" min="1900" max="2100" required></span></label>
     <label>Features<input name="features" list="featuresList" maxlength="60" placeholder="optional"></label>
     <label>Description<textarea name="description" rows="3" maxlength="2000"></textarea></label>
-    <div class="hint" id="pEditHint" hidden>Photos are optional when editing: leave a field empty to keep the current photo.</div>
+    <div class="hint" id="pEditHint" hidden></div>
     <label>Photo (collage)<input name="photo" id="pPhoto" type="file" accept="image/jpeg,image/png,image/webp" required></label>
     <label>Catalog cover (optional)<input name="cover" type="file" accept="image/jpeg,image/png,image/webp"></label>
     <div class="err" id="pErr"></div>
@@ -533,6 +539,7 @@ function route() {
   scope = ['owned', 'wish'].includes(parts[0]) ? parts.shift() : null;
   const [t, v] = parts;
   if (reorder) setReorder(false);
+  if (dupMode) setDup(false);
   $('#ordBtn').disabled = !(t === 'b' || t === 's') || !!scope;
   if (t === 'b' && v) showBrand(decodeURIComponent(v));
   else if (t === 's' && v) showSeries(+v);
@@ -605,10 +612,12 @@ const FLAG_ALIASES = {usa: 'us', america: 'us', uk: 'gb', 'great britain': 'gb',
   'ivory coast': 'ci', macau: 'mo', 'hong kong': 'hk', palestine: 'ps', turkey: 'tr', vietnam: 'vn', 'cape verde': 'cv', swaziland: 'sz',
   macedonia: 'mk', 'north macedonia': 'mk', burma: 'mm', congo: 'cg', 'dr congo': 'cd', 'east timor': 'tl', holland: 'nl', 'soviet union': 'su',
   ussr: 'su', europe: 'eu', 'european union': 'eu', vatican: 'va', kosovo: 'xk', reunion: 're', 'united states of america': 'us', 'the netherlands': 'nl',
-  bosnia: 'ba', 'st kitts': 'kn', 'st lucia': 'lc', 'saint lucia': 'lc', 'cocos islands': 'cc', 'falkland islands': 'fk', 'french guiana': 'gf'};
+  bosnia: 'ba', 'st kitts': 'kn', 'st lucia': 'lc', 'saint lucia': 'lc', 'cocos islands': 'cc', 'falkland islands': 'fk', 'french guiana': 'gf', myanmar: 'mm', macao: 'mo', 'cabo verde': 'cv', 'slovak republic': 'sk', 'republic of korea': 'kr',
+  'us virgin islands': 'vi', 'heard island and mcdonald islands': 'hm', 'democratic republic of the congo': 'cd', 'republic of the congo': 'cg',
+  'federated states of micronesia': 'fm', 'turks and caicos': 'tc'};
 const ISO_CODES = 'AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS XK YE YT ZA ZM ZW EU UN';
 let FLAG_MAP = null;
-const normName = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
+const normName = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').replace(/\bsaint\b/g, 'st').replace(/\bthe\b/g, ' ').replace(/\s+/g, ' ').trim();
 function flagMap() {
   if (FLAG_MAP) return FLAG_MAP;
   FLAG_MAP = new Map();
@@ -683,7 +692,7 @@ $('#pBrand').onchange = () => {
 async function openEdit(c) {
   const f = $('#pubForm'); f.reset(); $('#pErr').textContent = ''; editId = c.id;
   $('#pubTitle').textContent = 'Edit can'; $('#pSubmit').textContent = 'Save';
-  $('#pEditHint').hidden = false; $('#pPhoto').required = false;
+  $('#pEditHint').textContent = 'Photos are optional when editing: leave a field empty to keep the current photo.'; $('#pEditHint').hidden = false; $('#pPhoto').required = false;
   $('#pBrand').value = c.brand; $('#pSerWrap').hidden = false;
   await loadSeriesOpts(c.brand, c.series_id);
   for (const k of ['name', 'volume', 'year', 'features', 'description']) f.elements.namedItem(k).value = c[k] ?? '';
@@ -694,7 +703,7 @@ async function openEdit(c) {
   $('#dlg').close(); $('#pubDlg').showModal();
 }
 $('#pubDlg').addEventListener('close', () => {
-  editId = null; $('#pubForm').reset(); resetCountryRows(); $('#pSerWrap').hidden = true;
+  editId = null; dupFrom = null; $('#pubForm').reset(); resetCountryRows(); $('#pSerWrap').hidden = true;
   $('#pubTitle').textContent = 'Publish a can'; $('#pSubmit').textContent = 'Publish';
   $('#pEditHint').hidden = true; $('#pPhoto').required = true;
 });
@@ -703,6 +712,7 @@ $('#pubForm').onsubmit = async e => {
   const btn = $('#pSubmit'); btn.disabled = true; $('#pErr').textContent = 'Uploading…';
   const fd = new FormData($('#pubForm')), sid = fd.get('series_id'), editing = editId;
   if (editing) fd.append('id', editing);
+  if (dupFrom) fd.append('copy_from', dupFrom);
   try {
     await api(editing ? '/api/can-edit' : '/api/cans', {method: 'POST', body: fd});
     $('#pubDlg').close();
@@ -724,7 +734,11 @@ for (const id of ['#folders', '#sFolders', '#scFolders', '#subFolders']) {
   $(id).addEventListener('click', clickFolder);
   $(id).addEventListener('keydown', e => { if (e.key === 'Enter') clickFolder(e); });
 }
-const clickCard = e => { const c = e.target.closest('.card'); if (c && !reorder) openCan(+c.dataset.id); };
+const clickCard = e => {
+  const c = e.target.closest('.card'); if (!c || reorder) return;
+  if (dupMode) { const can = st.items.find(x => x.id === +c.dataset.id); setDup(false); if (can) openDuplicate(can); return; }
+  openCan(+c.dataset.id);
+};
 for (const id of ['#grid', '#sgrid', '#bgrid']) {
   $(id).addEventListener('click', clickCard);
   $(id).addEventListener('keydown', e => { if (e.key === 'Enter') clickCard(e); });
@@ -764,7 +778,27 @@ async function saveOrder(t) {
     if (t.kind === 'cans') st.items.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
   } catch (e) { alert(e.message); }
 }
-$('#ordBtn').onclick = () => needAuth(() => setReorder(!reorder));
+$('#ordBtn').onclick = () => needAuth(() => { setDup(false); setReorder(!reorder); });
+// ---------- дублирование банки: кнопка, потом клик по банке ----------
+let dupMode = false, dupFrom = null;
+function setDup(on) {
+  dupMode = on; $('#dupBtn').classList.toggle('on', on); $('#dupHint').hidden = !on; document.body.classList.toggle('duplicating', on);
+  if (on && reorder) setReorder(false);
+}
+$('#dupBtn').onclick = () => needAuth(() => setDup(!dupMode));
+async function openDuplicate(c) {
+  const f = $('#pubForm'); f.reset(); $('#pErr').textContent = ''; editId = null; dupFrom = c.id;
+  $('#pubTitle').textContent = 'Duplicate can'; $('#pSubmit').textContent = 'Publish';
+  $('#pEditHint').textContent = 'Photos are optional: leave a field empty to copy the photo of the original can.'; $('#pEditHint').hidden = false; $('#pPhoto').required = false;
+  $('#pBrand').value = c.brand; $('#pSerWrap').hidden = false;
+  await loadSeriesOpts(c.brand, c.series_id);
+  for (const k of ['name', 'volume', 'year', 'features', 'description']) f.elements.namedItem(k).value = c[k] ?? '';
+  resetCountryRows();
+  const cl = countriesOf(c);
+  $('#pubForm input[name="country"]').value = cl[0] || '';
+  cl.slice(1).forEach(addCountryRow);
+  $('#pubDlg').showModal();
+}
 
 // ---------- number fields with custom arrows ----------
 const SPIN = '<span class="spin"><button type="button" class="up" tabindex="-1" aria-label="Increase"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button><button type="button" class="dn" tabindex="-1" aria-label="Decrease"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></span>';
