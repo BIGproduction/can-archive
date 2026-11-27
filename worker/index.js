@@ -6,6 +6,7 @@ const enc = new TextEncoder();
 const hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
 const unhex = h => new Uint8Array(h.match(/../g).map(x => parseInt(x, 16)));
 const json = (o, status = 200, headers = {}) => Response.json(o, { status, headers });
+const isAdmin = u => !!u && (u.role === 'owner' || u.role === 'admin'); // админы могут всё, обычные пользователи только публикуют банки
 
 async function pbkdf2(password, salt) {
   const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
@@ -76,7 +77,7 @@ async function cans(q, env, request) {
   if (q.get('meta') && q.get('brand')) {
     const b = q.get('brand');
     const col = async (c, order) => (await env.DB.prepare(`SELECT DISTINCT ${c} AS v FROM cans WHERE brand = ? AND ${c} IS NOT NULL ORDER BY ${order}`).bind(b).all()).results.map(r => r.v);
-    return json({ countries: (await env.DB.prepare('SELECT MIN(j.value) AS v FROM cans c, json_each(c.countries) j WHERE c.brand = ? GROUP BY lower(j.value) ORDER BY 1').bind(b).all()).results.map(r => r.v), volumes: await col('volume', '1'), years: await col('year', '1 DESC'), features: await col('features', '1') });
+    return json({ countries: (await env.DB.prepare('SELECT MIN(j.value) AS v FROM cans c, json_each(c.countries) j WHERE c.brand = ? GROUP BY lower(j.value) ORDER BY 1').bind(b).all()).results.map(r => r.v), volumes: await col('volume', '1'), years: await col('year', '1 DESC'), features: (await env.DB.prepare('SELECT MIN(j.value) AS v FROM cans c, json_each(c.feature_list) j WHERE c.brand = ? GROUP BY lower(j.value) ORDER BY 1').bind(b).all()).results.map(r => r.v) });
   }
   if (q.get('meta')) {
     const c = await env.DB.prepare('SELECT brand, COUNT(*) n FROM cans GROUP BY brand').all();
@@ -93,7 +94,7 @@ async function cans(q, env, request) {
       countries: countries.results.map(r => r.v),
       volumes: vols.results.map(r => r.v),
       years: yrs.results.map(r => r.v),
-      features: (await env.DB.prepare('SELECT MIN(features) AS v FROM cans WHERE features IS NOT NULL GROUP BY lower(features) ORDER BY 1').all()).results.map(r => r.v),
+      features: (await env.DB.prepare('SELECT MIN(j.value) AS v FROM cans c, json_each(c.feature_list) j GROUP BY lower(j.value) ORDER BY 1').all()).results.map(r => r.v),
       covers,
       all: n.n
     });
@@ -101,7 +102,7 @@ async function cans(q, env, request) {
   const where = [], args = [];
   if (q.get('brand')) { where.push('brand = ?'); args.push(q.get('brand')); }
   if (q.get('country')) { where.push('EXISTS (SELECT 1 FROM json_each(c.countries) j WHERE j.value = ? COLLATE NOCASE)'); args.push(q.get('country')); }
-  if (q.get('features')) { where.push('features = ? COLLATE NOCASE'); args.push(q.get('features')); }
+  if (q.get('features')) { where.push('EXISTS (SELECT 1 FROM json_each(c.feature_list) j WHERE j.value = ? COLLATE NOCASE)'); args.push(q.get('features')); }
   for (const k of ['volume', 'year', 'series_id']) if (q.get(k)) { where.push(`${k} = ?`); args.push(Number(q.get(k))); }
   if (q.get('q')) { where.push('(name LIKE ? OR description LIKE ?)'); args.push(`%${q.get('q')}%`, `%${q.get('q')}%`); }
   const w = where.length ? ' WHERE ' + where.join(' AND ') : '';
@@ -113,6 +114,18 @@ async function cans(q, env, request) {
   const rows = await env.DB.prepare('SELECT c.*, u.nick AS author FROM cans c LEFT JOIN users u ON u.id = c.user_id' + join + w + ' ORDER BY ' + order + ' LIMIT ? OFFSET ?')
     .bind(...jargs, ...args, limit, offset).all();
   return json({ total: total.n, items: rows.results });
+}
+
+// несколько Features на банку: поля features повторяются, максимум 20, можно ни одного
+function parseFeatures(f) {
+  const list = [], seen = new Set();
+  for (const v of f.getAll('features')) {
+    const c = String(v || '').trim();
+    if (!c) continue;
+    if (c.length > 60) return null;
+    if (!seen.has(c.toLowerCase())) { seen.add(c.toLowerCase()); list.push(c); }
+  }
+  return list.length <= 20 ? list : null;
 }
 
 // несколько стран на банку: поля country повторяются, максимум 20
@@ -134,7 +147,7 @@ async function publish(request, env) {
 
   const f = await request.formData().catch(() => null);
   if (!f) return json({ error: 'Invalid data' }, 400);
-  const brand = f.get('brand'), features = String(f.get('features') || '').trim();
+  const brand = f.get('brand'), featureList = parseFeatures(f);
   const name = String(f.get('name') || '').trim(), countries = parseCountries(f);
   const description = String(f.get('description') || '').trim();
   const volume = Number(f.get('volume')), year = Number(f.get('year'));
@@ -148,7 +161,7 @@ async function publish(request, env) {
   if (!countries) return json({ error: 'Enter 1 to 20 countries (up to 60 characters each)' }, 400);
   if (!Number.isInteger(volume) || volume < 1 || volume > 5000) return json({ error: 'Volume: a number from 1 to 5000 ml' }, 400);
   if (!Number.isInteger(year) || year < 1900 || year > 2100) return json({ error: 'Enter a year' }, 400);
-  if (features.length > 60) return json({ error: 'Features: up to 60 characters' }, 400);
+  if (!featureList) return json({ error: 'Features: up to 20, each up to 60 characters' }, 400);
   if (description.length > 2000) return json({ error: 'Description is too long' }, 400);
 
   const okFile = x => x && typeof x === 'object' && TYPES[x.type] && x.size > 0 && x.size <= MAX_FILE;
@@ -162,8 +175,8 @@ async function publish(request, env) {
   if (cover && cover.size && !okFile(cover)) return json({ error: 'Cover: JPG, PNG or WebP, up to 8 MB' }, 400);
 
   // новая банка встаёт в самый верх папки (раньше всех, у кого задан ручной порядок)
-  const r = await env.DB.prepare('INSERT INTO cans (name, brand, country, countries, volume, year, features, description, user_id, series_id, sort) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT MIN(sort) - 1 FROM cans WHERE series_id = ?))')
-    .bind(name, brand, countries.join(', '), JSON.stringify(countries), volume, year, features || null, description, user.id, seriesId, seriesId).run();
+  const r = await env.DB.prepare('INSERT INTO cans (name, brand, country, countries, volume, year, features, feature_list, description, user_id, series_id, sort) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT MIN(sort) - 1 FROM cans WHERE series_id = ?))')
+    .bind(name, brand, countries.join(', '), JSON.stringify(countries), volume, year, featureList.join(', ') || null, featureList.length ? JSON.stringify(featureList) : null, description, user.id, seriesId, seriesId).run();
   const id = r.meta.last_row_id;
   try {
     let photoKey, coverKey;
@@ -197,7 +210,7 @@ async function publish(request, env) {
 
 async function seriesList(q, env, request) {
   if (q.get('id')) {
-    const s = await env.DB.prepare('SELECT id, brand, name, parent_id FROM series WHERE id = ?').bind(Number(q.get('id'))).first();
+    const s = await env.DB.prepare('SELECT id, brand, name, parent_id, icon FROM series WHERE id = ?').bind(Number(q.get('id'))).first();
     if (!s) return json({ error: 'Folder not found' }, 404);
     const path = [s.name];
     let pid = s.parent_id;
@@ -222,19 +235,19 @@ async function seriesList(q, env, request) {
     const mine = await env.DB.prepare(`WITH RECURSIVE sub(root, id) AS (
         SELECT id, id FROM series WHERE brand = ? AND parent_id IS ?
         UNION ALL SELECT sub.root, s.id FROM series s JOIN sub ON s.parent_id = sub.id)
-      SELECT s.id, s.name, s.sort AS pos FROM series s
+      SELECT s.id, s.name, s.sort AS pos, s.icon FROM series s
       WHERE s.id IN (SELECT root FROM sub WHERE EXISTS (SELECT 1 FROM cans c JOIN user_cans uc ON uc.can_id = c.id WHERE c.series_id = sub.id AND uc.user_id = ? AND uc.kind = ?))
       ORDER BY s.sort IS NULL, s.sort, s.name`).bind(brand, parent, u.id, kind).all();
     return json({ items: mine.results });
   }
-  const rows = await env.DB.prepare('SELECT id, name, sort AS pos FROM series WHERE brand = ? AND parent_id IS ? ORDER BY sort IS NULL, sort, name').bind(brand, parent).all();
+  const rows = await env.DB.prepare('SELECT id, name, sort AS pos, icon FROM series WHERE brand = ? AND parent_id IS ? ORDER BY sort IS NULL, sort, name').bind(brand, parent).all();
   return json({ items: rows.results });
 }
 
 async function orderSet(request, env) {
   const u = await currentUser(request, env);
   if (!u) return json(NEED_LOGIN, 401);
-  if (u.role !== 'owner') return json({ error: 'Only the owner can change the order' }, 403);
+  if (!isAdmin(u)) return json({ error: 'Only admins can change the order' }, 403);
   const { kind, brand, series_id, ids } = await request.json().catch(() => ({}));
   if (!Array.isArray(ids) || ids.length > 2000 || !ids.every(Number.isInteger)) return json({ error: 'Invalid data' }, 400);
   let sql, extra;
@@ -249,7 +262,7 @@ async function orderSet(request, env) {
 async function seriesCreate(request, env) {
   const user = await currentUser(request, env);
   if (!user) return json({ error: 'Please log in or sign up first' }, 401);
-  if (user.role !== 'owner') return json({ error: 'Only the owner can create folders' }, 403);
+  if (!isAdmin(user)) return json({ error: 'Only admins can create folders' }, 403);
   const { brand, name, parent_id } = await request.json().catch(() => ({}));
   const n = String(name || '').trim();
   if (!BRANDS.includes(brand)) return json({ error: 'Select a brand' }, 400);
@@ -352,6 +365,7 @@ async function collectionSet(request, env) {
 async function editCan(request, env) {
   const user = await currentUser(request, env);
   if (!user) return json(NEED_LOGIN, 401);
+  if (!isAdmin(user)) return json({ error: 'Only admins can edit cans' }, 403);
   if (!env.PHOTOS) return json({ error: 'Photo storage is not connected' }, 501);
   const f = await request.formData().catch(() => null);
   if (!f) return json({ error: 'Invalid data' }, 400);
@@ -359,7 +373,7 @@ async function editCan(request, env) {
   const old = Number.isInteger(id) ? await env.DB.prepare('SELECT * FROM cans WHERE id = ?').bind(id).first() : null;
   if (!old) return json({ error: 'Can not found' }, 404);
 
-  const brand = f.get('brand'), features = String(f.get('features') || '').trim();
+  const brand = f.get('brand'), featureList = parseFeatures(f);
   const name = String(f.get('name') || '').trim(), countries = parseCountries(f);
   const description = String(f.get('description') || '').trim();
   const volume = Number(f.get('volume')), year = Number(f.get('year')), seriesId = Number(f.get('series_id'));
@@ -374,7 +388,7 @@ async function editCan(request, env) {
   if (!countries) return json({ error: 'Enter 1 to 20 countries (up to 60 characters each)' }, 400);
   if (!Number.isInteger(volume) || volume < 1 || volume > 5000) return json({ error: 'Volume: a number from 1 to 5000 ml' }, 400);
   if (!Number.isInteger(year) || year < 1900 || year > 2100) return json({ error: 'Enter a year' }, 400);
-  if (features.length > 60) return json({ error: 'Features: up to 60 characters' }, 400);
+  if (!featureList) return json({ error: 'Features: up to 20, each up to 60 characters' }, 400);
   if (description.length > 2000) return json({ error: 'Description is too long' }, 400);
   const okFile = x => TYPES[x.type] && x.size <= MAX_FILE;
   if (newPhoto && !okFile(photo)) return json({ error: 'Photo: JPG, PNG or WebP, up to 8 MB' }, 400);
@@ -392,9 +406,40 @@ async function editCan(request, env) {
   } catch {
     return json({ error: 'Could not save the photo, please try again' }, 500);
   }
-  await env.DB.prepare('UPDATE cans SET name = ?, brand = ?, country = ?, countries = ?, volume = ?, year = ?, features = ?, description = ?, series_id = ?, photo = ?, cover = ?, sort = ? WHERE id = ?')
-    .bind(name, brand, countries.join(', '), JSON.stringify(countries), volume, year, features || null, description, seriesId, photoKey, coverKey, old.series_id === seriesId ? old.sort : null, id).run();
+  await env.DB.prepare('UPDATE cans SET name = ?, brand = ?, country = ?, countries = ?, volume = ?, year = ?, features = ?, feature_list = ?, description = ?, series_id = ?, photo = ?, cover = ?, sort = ? WHERE id = ?')
+    .bind(name, brand, countries.join(', '), JSON.stringify(countries), volume, year, featureList.join(', ') || null, featureList.length ? JSON.stringify(featureList) : null, description, seriesId, photoKey, coverKey, old.series_id === seriesId ? old.sort : null, id).run();
   for (const k of new Set([old.photo, old.cover])) if (k && k !== photoKey && k !== coverKey) await env.PHOTOS.delete(k);
+  return json({ ok: true });
+}
+
+// переименование папки и иконка папки (только админы)
+async function seriesEdit(request, env) {
+  const u = await currentUser(request, env);
+  if (!u) return json(NEED_LOGIN, 401);
+  if (!isAdmin(u)) return json({ error: 'Only admins can edit folders' }, 403);
+  if (!env.PHOTOS) return json({ error: 'Photo storage is not connected' }, 501);
+  const f = await request.formData().catch(() => null);
+  if (!f) return json({ error: 'Invalid data' }, 400);
+  const id = Number(f.get('id'));
+  const old = Number.isInteger(id) ? await env.DB.prepare('SELECT * FROM series WHERE id = ?').bind(id).first() : null;
+  if (!old) return json({ error: 'Folder not found' }, 404);
+  const name = String(f.get('name') || '').trim();
+  if (!name || name.length > 60) return json({ error: 'Folder name: 1 to 60 characters' }, 400);
+  const icon = f.get('icon');
+  const newIcon = !!icon && typeof icon === 'object' && icon.size > 0;
+  if (newIcon && !(TYPES[icon.type] && icon.size <= MAX_FILE)) return json({ error: 'Icon: JPG, PNG or WebP, up to 8 MB' }, 400);
+  let iconKey = old.icon;
+  if (newIcon) iconKey = `series/${id}-${Date.now()}.${TYPES[icon.type]}`; // новый адрес: старые кэшируются браузером на год
+  else if (f.get('remove_icon') === '1') iconKey = null;
+  try {
+    if (newIcon) await env.PHOTOS.put(iconKey, icon.stream(), { httpMetadata: { contentType: icon.type } });
+    await env.DB.prepare('UPDATE series SET name = ?, name_lc = ?, icon = ? WHERE id = ?').bind(name, name.toLowerCase(), iconKey, id).run();
+  } catch (e) {
+    if (newIcon) await env.PHOTOS.delete(iconKey);
+    if (/UNIQUE/i.test(String(e && e.message || e))) return json({ error: 'This folder already exists in this brand' }, 409);
+    throw e;
+  }
+  if (old.icon && old.icon !== iconKey) await env.PHOTOS.delete(old.icon);
   return json({ ok: true });
 }
 
@@ -416,6 +461,7 @@ async function handle(request, env) {
     if (p === '/api/avatar') return m === 'POST' ? avatarSet(request, env) : m === 'DELETE' ? avatarDelete(request, env) : json({ error: 'Method not allowed' }, 405);
     if (p === '/api/collection') return m === 'POST' ? collectionSet(request, env) : collectionGet(request, env);
     if (p === '/api/can-edit' && m === 'POST') return editCan(request, env);
+    if (p === '/api/series-edit' && m === 'POST') return seriesEdit(request, env);
     if (p === '/api/series') return m === 'POST' ? seriesCreate(request, env) : seriesList(url.searchParams, env, request);
     if (p === '/api/order' && m === 'POST') return orderSet(request, env);
     if (p === '/api/me') { const u = await currentUser(request, env); return json({ nick: u ? u.nick : null, role: u ? u.role || null : null }); }
