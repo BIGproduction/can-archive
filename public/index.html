@@ -55,7 +55,7 @@ button{cursor:pointer}
 .crow{display:flex;gap:6px;margin-top:6px}
 .crow input{flex:1;min-width:0}
 .crow .cdel{padding:0 12px}
-#pCountryAdd{justify-self:start;margin-top:6px}
+#pCountryAdd,#pFeatureAdd{justify-self:start;margin-top:6px}
 .bar{padding:8px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .bar h2{margin:0;font-size:22px}
 .link{color:var(--ac);text-decoration:none;cursor:pointer}
@@ -139,8 +139,13 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
 .zbox img{position:absolute;left:50%;top:50%;max-width:100%;max-height:100%;transform:translate(-50%,-50%);user-select:none;-webkit-user-drag:none}
 .ztools{position:absolute;left:10px;bottom:10px;display:flex;gap:6px;z-index:2}
 .ztools button{min-width:40px;height:40px;padding:0 10px;font-size:20px}
-#ordBtn,#dupBtn{background:var(--card);border-color:var(--bd);color:var(--ink)}
-#ordBtn.on,#dupBtn.on{background:var(--ac);border-color:var(--ac);color:#fff}
+#ordBtn,#dupBtn,#folBtn{background:var(--card);border-color:var(--bd);color:var(--ink)}
+#ordBtn.on,#dupBtn.on,#folBtn.on{background:var(--ac);border-color:var(--ac);color:#fff}
+.ficon{display:flex;gap:12px;align-items:flex-start}
+.fprev{width:150px;height:88px;flex:none;border-radius:8px;border:1px solid var(--bd);background:var(--bd) center/cover no-repeat}
+.fcol{display:grid;gap:8px;flex:1;min-width:0}
+.editing-folders .tile[data-s]{cursor:pointer}
+.editing-folders .tile[data-s]:hover .fico{outline:2px solid var(--ac);outline-offset:4px;border-radius:12px}
 .duplicating .card{cursor:copy}
 .duplicating .card:hover{outline:2px solid var(--ac);outline-offset:3px}
 #ordBtn:disabled{opacity:.4;cursor:not-allowed}
@@ -181,10 +186,14 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
   <button class="sq" id="ordBtn" hidden title="Reorder folders and cans (drag and drop)" aria-label="Reorder" disabled>
     <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>
   </button>
+  <button class="sq" id="folBtn" hidden title="Edit folders: press, then click a folder" aria-label="Edit folders">
+    <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 16l1-3 5-5 2 2-5 5z"/></svg>
+  </button>
   <button class="sq" id="dupBtn" title="Duplicate a can: press, then click a can" aria-label="Duplicate a can">
     <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>
   </button>
   <span class="hint" id="dupHint" hidden>Click the can you want to duplicate</span>
+  <span class="hint" id="folHint" hidden>Click the folder you want to edit</span>
   <button class="sq" style="margin-left:auto" id="themeBtn" aria-label="Toggle light or dark theme"></button>
 </div>
 
@@ -305,6 +314,23 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
   </form>
 </dialog>
 
+<dialog id="folDlg" class="sm">
+  <button class="close" data-close>Close</button>
+  <form class="stack" id="folForm">
+    <h2 style="margin:0">Edit folder</h2>
+    <label>Folder name<input id="fName" maxlength="60" required></label>
+    <div class="ficon">
+      <div class="fprev" id="fPrev"></div>
+      <div class="fcol">
+        <label>Folder icon<input type="file" id="fIcon" accept="image/jpeg,image/png,image/webp"></label>
+        <button type="button" id="fRemove">Remove icon</button>
+      </div>
+    </div>
+    <div class="err" id="fErr"></div>
+    <button class="primary">Save</button>
+  </form>
+</dialog>
+
 <dialog id="serDlg" class="sm">
   <button class="close" data-close>Close</button>
   <form class="stack" id="serForm">
@@ -332,7 +358,11 @@ form.stack label{display:grid;gap:4px;font-size:14px;color:var(--mut)}
     </div>
     <label>Volume, ml<span class="num"><input name="volume" type="number" min="1" max="5000" required></span></label>
     <label>Year<span class="num"><input name="year" type="number" min="1900" max="2100" required></span></label>
-    <label>Features<input name="features" list="featuresList" maxlength="60" placeholder="optional"></label>
+    <div class="clist">
+      <label>Features<input name="features" list="featuresList" maxlength="60" placeholder="optional"></label>
+      <div id="pFeatureMore"></div>
+      <button type="button" id="pFeatureAdd">Add</button> <span class="hint" id="pFeatureHint">up to 20 features</span>
+    </div>
     <label>Description<textarea name="description" rows="3" maxlength="2000"></textarea></label>
     <div class="hint" id="pEditHint" hidden></div>
     <label>Photo (collage)<input name="photo" id="pPhoto" type="file" accept="image/jpeg,image/png,image/webp" required></label>
@@ -352,14 +382,18 @@ let st = {page: 0, total: 0, items: []}, cur = null, mode = 'login', afterAuth =
 
 const mine = {owned: new Set(), wish: new Set()};
 let profile = null;
-let isOwner = false, curCan = null;
+let isAdmin = false, curCan = null;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const img = k => k ? `style="background-image:url('/img/${encodeURI(k)}')"` : '';
 const opts = (list, first, fmt = v => v) => (first ? `<option value="">${first}</option>` : '') + list.map(v => `<option value="${esc(v)}">${esc(fmt(v))}</option>`).join('');
 const bg = k => `style="background-image:url('/img/${encodeURI(k)}')"`;
 const brandTile = (b, covers = meta.covers) => `<div class="tile" tabindex="0" data-b="${esc(b)}"><div class="bbox"><div class="mos">${(covers?.[b] || []).map(k => `<i ${bg(k)}></i>`).join('')}</div><img class="badge" src="/folder-badge.png" alt=""></div><div class="cap">${esc(b)}</div></div>`;
 const FICON = '<svg class="fico" viewBox="0 0 1335 1180" aria-hidden="true"><path d="M85 190Q85 50 190 50H440Q510 50 560 100L600 140Q640 180 700 180H1190Q1255 180 1255 245V420H85Z" fill="#348bee"/><rect x="163" y="228" width="1008" height="300" rx="45" fill="#f2f2f7"/><rect x="75" y="322" width="1185" height="765" rx="90" fill="#3d99fb"/></svg>';
-const seriesTile = s => `<div class="tile" tabindex="0" data-s="${s.id}">${FICON}<div class="cap">${esc(s.name)}</div></div>`;
+const folders = new Map(); // данные папок на экране (для окна редактирования)
+const folderSvg = s => s.icon
+  ? `<svg class="fico" viewBox="0 0 1335 1180" aria-hidden="true"><path d="M85 190Q85 50 190 50H440Q510 50 560 100L600 140Q640 180 700 180H1190Q1255 180 1255 245V420H85Z" fill="#348bee"/><rect x="75" y="322" width="1185" height="765" rx="90" fill="#3d99fb"/><clipPath id="ic${s.id}"><rect x="105" y="215" width="1125" height="640" rx="30"/></clipPath><rect x="90" y="200" width="1155" height="670" rx="40" fill="#fff"/><image href="/img/${encodeURI(s.icon)}" x="105" y="215" width="1125" height="640" preserveAspectRatio="xMidYMid slice" clip-path="url(#ic${s.id})"/></svg>`
+  : FICON;
+const seriesTile = s => (folders.set(s.id, s), `<div class="tile" tabindex="0" data-s="${s.id}">${folderSvg(s)}<div class="cap">${esc(s.name)}</div></div>`);
 const coll = new Intl.Collator(['ru', 'en'], {numeric: true, sensitivity: 'base'});
 const byName = a => [...a].sort((x, y) => coll.compare(x.name, y.name));
 const bySeries = a => [...a].sort((x, y) => ((x.pos == null) - (y.pos == null)) || ((x.pos ?? 0) - (y.pos ?? 0)) || coll.compare(x.name, y.name));
@@ -430,7 +464,7 @@ function openCan(id) {
         <dt>${countriesOf(c).length > 1 ? 'Countries' : 'Country'}</dt><dd>${countriesOf(c).map(n => `<span class="cn">${flagHtml(n)} ${esc(n)}</span>`).join('')}</dd>
         <dt>Volume</dt><dd>${esc(c.volume)} ml</dd>
         <dt>Year</dt><dd>${esc(c.year)}</dd>
-        ${c.features ? `<dt>Features</dt><dd>${esc(c.features)}</dd>` : ''}
+        ${featuresOf(c).length ? `<dt>Features</dt><dd>${featuresOf(c).map(esc).join(', ')}</dd>` : ''}
         ${c.author ? `<dt>Published by</dt><dd>${esc(c.author)}</dd>` : ''}
       </dl>
       <p>${esc(c.description)}</p>
@@ -540,6 +574,7 @@ function route() {
   const [t, v] = parts;
   if (reorder) setReorder(false);
   if (dupMode) setDup(false);
+  if (folMode) setFol(false);
   $('#ordBtn').disabled = !(t === 'b' || t === 's') || !!scope;
   if (t === 'b' && v) showBrand(decodeURIComponent(v));
   else if (t === 's' && v) showSeries(+v);
@@ -552,7 +587,7 @@ function route() {
 // ---------- вход и регистрация ----------
 function updateAuth() {
   $('#profBtn').hidden = !me;
-  $('#serBtn').hidden = !isOwner; $('#ordBtn').hidden = !isOwner;
+  $('#serBtn').hidden = !isAdmin; $('#ordBtn').hidden = !isAdmin; $('#folBtn').hidden = !isAdmin; $('#editCan').hidden = !isAdmin;
   $('#authBtn').textContent = me ? 'Log out' : 'Log in / Sign up';
 }
 function setMode(m) {
@@ -564,7 +599,7 @@ function setMode(m) {
 }
 function needAuth(action) { if (me) return action(); afterAuth = action; setMode('register'); $('#authDlg').showModal(); }
 $('#authBtn').onclick = async () => {
-  if (me) { try { await api('/api/logout', {method: 'POST'}); } catch {} me = null; isOwner = false; clearColl(); updateAuth(); }
+  if (me) { try { await api('/api/logout', {method: 'POST'}); } catch {} me = null; isAdmin = false; clearColl(); updateAuth(); }
   else { afterAuth = null; setMode('login'); $('#authDlg').showModal(); }
 };
 $('#tLogin').onclick = () => setMode('login');
@@ -574,7 +609,7 @@ $('#authForm').onsubmit = async e => {
   try {
     const r = await api('/api/' + mode, {method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({nick: $('#aNick').value.trim(), password: $('#aPass').value})});
-    me = r.nick; isOwner = r.role === 'owner'; updateAuth(); await loadColl(); $('#authForm').reset(); $('#authDlg').close();
+    me = r.nick; isAdmin = ['owner', 'admin'].includes(r.role); updateAuth(); await loadColl(); $('#authForm').reset(); $('#authDlg').close();
     const a = afterAuth; afterAuth = null; if (a) a();
     if (/^#(map|owned|wish)/.test(location.hash)) route();
   } catch (err) { $('#aErr').textContent = err.message; }
@@ -644,24 +679,31 @@ const flagHtml = name => {
   return c ? `<span class="fc" title="${esc(name)}"><img src="${FLAG_URL}${c}.svg" alt="${esc(name)}" loading="lazy" onerror="this.classList.add('bad')"></span>`
            : `<span class="fc unk" title="${esc(name)}"></span>`;
 };
+const featuresOf = c => {
+  try { const a = JSON.parse(c.feature_list || 'null'); if (Array.isArray(a) && a.length) return a; } catch {}
+  return c.features ? [c.features] : [];
+};
 const countriesOf = c => {
   try { const a = JSON.parse(c.countries || 'null'); if (Array.isArray(a) && a.length) return a; } catch {}
   return c.country ? [c.country] : [];
 };
-// ---------- несколько стран в форме публикации (до 20) ----------
-function updateCountryAdd() {
-  const n = $('#pCountryMore').children.length + 1;
-  $('#pCountryAdd').disabled = n >= 20;
-  $('#pCountryHint').textContent = n >= 20 ? 'limit reached: 20 countries' : 'up to 20 countries';
+// ---------- несколько значений в форме публикации (страны и Features, до 20 каждого) ----------
+function multiRows(more, addBtn, hint, field, list, ph, noun) {
+  const upd = () => { const n = $(more).children.length + 1; $(addBtn).disabled = n >= 20; $(hint).textContent = n >= 20 ? 'limit reached: 20 ' + noun : 'up to 20 ' + noun; };
+  const add = (value = '') => {
+    if ($(more).children.length + 1 >= 20) return;
+    $(more).insertAdjacentHTML('beforeend', `<div class="crow"><input name="${field}" list="${list}" maxlength="60" placeholder="${ph}" value="${esc(value)}"><button type="button" class="cdel" aria-label="Remove">×</button></div>`);
+    upd();
+  };
+  const reset = () => { $(more).innerHTML = ''; upd(); };
+  $(addBtn).onclick = () => add();
+  $(more).addEventListener('click', e => { const b = e.target.closest('.cdel'); if (b) { b.closest('.crow').remove(); upd(); } });
+  return {add, reset};
 }
-function addCountryRow(value = '') {
-  if ($('#pCountryMore').children.length + 1 >= 20) return;
-  $('#pCountryMore').insertAdjacentHTML('beforeend', `<div class="crow"><input name="country" list="countries" maxlength="60" placeholder="Another country" value="${esc(value)}"><button type="button" class="cdel" aria-label="Remove country">×</button></div>`);
-  updateCountryAdd();
-}
-function resetCountryRows() { $('#pCountryMore').innerHTML = ''; updateCountryAdd(); }
-$('#pCountryAdd').onclick = () => addCountryRow();
-$('#pCountryMore').addEventListener('click', e => { const b = e.target.closest('.cdel'); if (b) { b.closest('.crow').remove(); updateCountryAdd(); } });
+const countryRows = multiRows('#pCountryMore', '#pCountryAdd', '#pCountryHint', 'country', 'countries', 'Another country', 'countries');
+const featureRows = multiRows('#pFeatureMore', '#pFeatureAdd', '#pFeatureHint', 'features', 'featuresList', 'Another feature', 'features');
+const addCountryRow = countryRows.add, resetCountryRows = countryRows.reset;
+const addFeatureRow = featureRows.add, resetFeatureRows = featureRows.reset;
 
 let editId = null;
 function folderOptions(items) {
@@ -695,15 +737,19 @@ async function openEdit(c) {
   $('#pEditHint').textContent = 'Photos are optional when editing: leave a field empty to keep the current photo.'; $('#pEditHint').hidden = false; $('#pPhoto').required = false;
   $('#pBrand').value = c.brand; $('#pSerWrap').hidden = false;
   await loadSeriesOpts(c.brand, c.series_id);
-  for (const k of ['name', 'volume', 'year', 'features', 'description']) f.elements.namedItem(k).value = c[k] ?? '';
+  for (const k of ['name', 'volume', 'year', 'description']) f.elements.namedItem(k).value = c[k] ?? '';
   resetCountryRows();
   const cl = countriesOf(c);
   $('#pubForm input[name="country"]').value = cl[0] || '';
   cl.slice(1).forEach(addCountryRow);
+  resetFeatureRows();
+  const fl = featuresOf(c);
+  $('#pubForm input[name="features"]').value = fl[0] || '';
+  fl.slice(1).forEach(addFeatureRow);
   $('#dlg').close(); $('#pubDlg').showModal();
 }
 $('#pubDlg').addEventListener('close', () => {
-  editId = null; dupFrom = null; $('#pubForm').reset(); resetCountryRows(); $('#pSerWrap').hidden = true;
+  editId = null; dupFrom = null; $('#pubForm').reset(); resetCountryRows(); resetFeatureRows(); $('#pSerWrap').hidden = true;
   $('#pubTitle').textContent = 'Publish a can'; $('#pSubmit').textContent = 'Publish';
   $('#pEditHint').hidden = true; $('#pPhoto').required = true;
 });
@@ -728,6 +774,7 @@ document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.close
 const clickFolder = e => {
   const f = e.target.closest('.tile'); if (!f) return;
   if (reorder) return;
+  if (folMode) { if (f.dataset.s) { setFol(false); openFolderEdit(+f.dataset.s); } return; }
   location.hash = pre() + (f.dataset.b ? 'b/' + encodeURIComponent(f.dataset.b) : 's/' + f.dataset.s);
 };
 for (const id of ['#folders', '#sFolders', '#scFolders', '#subFolders']) {
@@ -778,12 +825,44 @@ async function saveOrder(t) {
     if (t.kind === 'cans') st.items.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
   } catch (e) { alert(e.message); }
 }
-$('#ordBtn').onclick = () => needAuth(() => { setDup(false); setReorder(!reorder); });
+$('#ordBtn').onclick = () => needAuth(() => { setDup(false); setFol(false); setReorder(!reorder); });
+// ---------- редактирование папок (только админы): кнопка, потом клик по папке ----------
+let folMode = false, folEdit = null;
+function setFol(on) {
+  folMode = on; $('#folBtn').classList.toggle('on', on); $('#folHint').hidden = !on; document.body.classList.toggle('editing-folders', on);
+  if (on) { setDup(false); if (reorder) setReorder(false); }
+}
+$('#folBtn').onclick = () => needAuth(() => { if (isAdmin) setFol(!folMode); });
+const folPrev = url => { $('#fPrev').style.backgroundImage = url ? `url('${url}')` : ''; };
+function openFolderEdit(id) {
+  const s = folders.get(id); if (!s) return;
+  folEdit = {id, remove: false, preview: null};
+  $('#fName').value = s.name; $('#fErr').textContent = ''; $('#fIcon').value = '';
+  folPrev(s.icon ? '/img/' + encodeURI(s.icon) : null);
+  $('#folDlg').showModal();
+}
+$('#fIcon').onchange = () => {
+  const file = $('#fIcon').files[0]; if (!file || !folEdit) return;
+  if (folEdit.preview) URL.revokeObjectURL(folEdit.preview);
+  folEdit.preview = URL.createObjectURL(file); folEdit.remove = false; folPrev(folEdit.preview);
+};
+$('#fRemove').onclick = () => { if (!folEdit) return; folEdit.remove = true; $('#fIcon').value = ''; folPrev(null); };
+$('#folForm').onsubmit = async e => {
+  e.preventDefault(); $('#fErr').textContent = '';
+  const fd = new FormData(), file = $('#fIcon').files[0];
+  fd.append('id', folEdit.id); fd.append('name', $('#fName').value);
+  if (file) fd.append('icon', file); else if (folEdit.remove) fd.append('remove_icon', '1');
+  try { await api('/api/series-edit', {method: 'POST', body: fd}); $('#folDlg').close(); route(); }
+  catch (err) { $('#fErr').textContent = err.message; }
+};
+$('#folDlg').addEventListener('close', () => { if (folEdit && folEdit.preview) URL.revokeObjectURL(folEdit.preview); folEdit = null; });
+
 // ---------- дублирование банки: кнопка, потом клик по банке ----------
 let dupMode = false, dupFrom = null;
 function setDup(on) {
   dupMode = on; $('#dupBtn').classList.toggle('on', on); $('#dupHint').hidden = !on; document.body.classList.toggle('duplicating', on);
   if (on && reorder) setReorder(false);
+  if (on) setFol(false);
 }
 $('#dupBtn').onclick = () => needAuth(() => setDup(!dupMode));
 async function openDuplicate(c) {
@@ -792,11 +871,15 @@ async function openDuplicate(c) {
   $('#pEditHint').textContent = 'Photos are optional: leave a field empty to copy the photo of the original can.'; $('#pEditHint').hidden = false; $('#pPhoto').required = false;
   $('#pBrand').value = c.brand; $('#pSerWrap').hidden = false;
   await loadSeriesOpts(c.brand, c.series_id);
-  for (const k of ['name', 'volume', 'year', 'features', 'description']) f.elements.namedItem(k).value = c[k] ?? '';
+  for (const k of ['name', 'volume', 'year', 'description']) f.elements.namedItem(k).value = c[k] ?? '';
   resetCountryRows();
   const cl = countriesOf(c);
   $('#pubForm input[name="country"]').value = cl[0] || '';
   cl.slice(1).forEach(addCountryRow);
+  resetFeatureRows();
+  const fl = featuresOf(c);
+  $('#pubForm input[name="features"]').value = fl[0] || '';
+  fl.slice(1).forEach(addFeatureRow);
   $('#pubDlg').showModal();
 }
 
@@ -889,7 +972,7 @@ function fillProfile() {
 }
 const markDirty = () => { $('#saveBtn').hidden = false; };
 $('#profBtn').onclick = openProfile;
-$('#editCan').onclick = () => { if (curCan) needAuth(() => openEdit(curCan)); };
+$('#editCan').onclick = () => { if (curCan && isAdmin) needAuth(() => openEdit(curCan)); };
 $('#editBtn').onclick = () => setEdit(!edit);
 $('#avUp').onclick = () => $('#avFile').click();
 $('#avFile').onchange = () => {
@@ -998,7 +1081,7 @@ async function showMap() {
 (async () => {
   applyTheme();
   counters();
-  try { const m = await api('/api/me'); me = m.nick; isOwner = m.role === 'owner'; } catch {}
+  try { const m = await api('/api/me'); me = m.nick; isAdmin = ['owner', 'admin'].includes(m.role); } catch {}
   updateAuth(); await loadColl(); await loadMeta(); route();
 })();
 </script>
